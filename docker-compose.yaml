@@ -1,0 +1,71 @@
+services:
+  # Main TPR Database
+  db:
+    image: postgres:17.6
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [prod]
+  # Main TPR API
+  api:
+    image: ghcr.io/antonzatsepilin/tpr-jwt:latest
+    restart: always
+    env_file: [.env]
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      EXTERNAL_LABS_URL: http://labs-backend:8001
+      EXTERNAL_AUTH_HEADER: ${EXTERNAL_AUTH_HEADER:-jhdfnb3riufb483785b45sdjkv.dfisndof-dfnsdofnsjdjfnsjfbdsj}
+      FIRST_A_LAB_TOKEN: ${FIRST_A_LAB_TOKEN:-ajkdfnshdabvpdhifvndsfjhlnfsjdlfkjsdfsdfsdf}
+      FIRST_B_LAB_TOKEN: ${FIRST_B_LAB_TOKEN:-lksdfmmskdkfmlsmdfklsdmfksdfmsldfkmsldkflsdkl}
+      SECOND_LAB_A_TOKEN: ${SECOND_LAB_A_TOKEN:-sdkfnsdjklafnljkdsnfkjdsanfkljsadnfjlsldnf}
+      SECOND_LAB_B_TOKEN: ${SECOND_LAB_B_TOKEN:-sdkfnsdjklafnljkdsnfkjdsanfkljsadnfjlsldnf}
+      SECOND_LAB_C_TOKEN: ${SECOND_LAB_C_TOKEN:-sdkfnsdjklafnljkdsnfkjdsanfkljsadnfjlsldnf}
+      LECTURER_HEADER: ${LECTURER_HEADER:-e8r4fn0y24nyvn4y8c430FdfvbudfuvRErfnernjen}
+    expose:
+      - "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [prod]
+    volumes:
+      - ./files:/app/files:rw
+    command:
+      [
+        "/bin/sh",
+        "-c",
+        "/usr/local/bin/migrate -path /app/schema -database 'postgres://${DB_USERNAME}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable' up && /app/main",
+      ]
+
+  frontend:
+    image: nginx:alpine
+    restart: always
+    ports:
+      - "3000:80"
+    volumes:
+      - ./tpr-frontend/dist:/usr/share/nginx/html
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+      - labs-backend
+      - labs1-frontend
+      - labs3-frontend
+    networks: [prod]
+
+volumes:
+  dbdata:
+  labs-dbdata:
+
+networks:
+  prod:
+    driver: bridge
