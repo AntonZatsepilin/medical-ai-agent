@@ -13,6 +13,7 @@ import (
 type Repository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*Consultation, error)
 	Save(ctx context.Context, c *Consultation) error
+	InitDB(ctx context.Context) error
 }
 
 type postgresRepo struct {
@@ -21,6 +22,23 @@ type postgresRepo struct {
 
 func NewRepository(db *sql.DB) Repository {
 	return &postgresRepo{db: db}
+}
+
+func (r *postgresRepo) InitDB(ctx context.Context) error {
+	query := `
+	CREATE TABLE IF NOT EXISTS consultations (
+		id UUID PRIMARY KEY,
+		patient_id UUID NOT NULL,
+		history JSONB,
+		facts JSONB,
+		mood TEXT,
+		is_complete BOOLEAN,
+		created_at TIMESTAMP,
+		updated_at TIMESTAMP
+	);
+	`
+	_, err := r.db.ExecContext(ctx, query)
+	return err
 }
 
 func (r *postgresRepo) GetByID(ctx context.Context, id uuid.UUID) (*Consultation, error) {
