@@ -36,7 +36,7 @@ const VoiceChat: React.FC = () => {
 
   const createConsultation = async () => {
     try {
-      const res = await fetch('http://localhost:8080/api/consultation', {
+      const res = await fetch('/api/consultation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ patient_id: "550e8400-e29b-41d4-a716-446655440000" }), // Demo Patient ID
@@ -54,7 +54,7 @@ const VoiceChat: React.FC = () => {
     if (!consultationIdRef.current) return;
 
     try {
-      const res = await fetch('http://localhost:8080/api/consultation/chat', {
+      const res = await fetch('/api/consultation/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

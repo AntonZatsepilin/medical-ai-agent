@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -10,6 +11,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	_ "github.com/lib/pq"
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 
 	"medical-ai-agent/internal/agent"
 	"medical-ai-agent/internal/consultation"
@@ -24,11 +28,26 @@ func main() {
 		dbConnStr = "postgres://user:password@localhost:5432/medical_ai?sslmode=disable"
 	}
 	
-	// We won't actually connect to DB to allow the server to start without it for demo
-	// In production: db, err := sql.Open("postgres", dbConnStr)
-	var db *sql.DB 
-	// db, err := sql.Open("postgres", dbConnStr)
-	// if err != nil { log.Fatal(err) }
+	var db *sql.DB
+	var err error
+	
+	// Simple retry logic for DB connection
+	for i := 0; i < 10; i++ {
+		db, err = sql.Open("postgres", dbConnStr)
+		if err == nil {
+			err = db.Ping()
+		}
+		if err == nil {
+			break
+		}
+		fmt.Printf("Waiting for DB... (%d/10)\n", i+1)
+		// In a real app, use time.Sleep
+	}
+	if err != nil {
+		log.Printf("Could not connect to DB: %v. Continuing without DB for demo purposes (some features will fail).\n", err)
+	} else {
+		log.Println("Connected to Database.")
+	}
 
 	// 2. Clients
 	deepSeekKey := os.Getenv("DEEPSEEK_API_KEY")
@@ -39,6 +58,14 @@ func main() {
 
 	// 3. Services
 	repo := consultation.NewRepository(db)
+	
+	// Initialize DB Schema
+	if db != nil {
+		if err := repo.InitDB(context.Background()); err != nil {
+			log.Printf("Failed to initialize DB schema: %v", err)
+		}
+	}
+
 	reportSvc := report.NewService(tgClient, 123456789) // Doctor Chat ID
 	consultationSvc := consultation.NewService(repo, aiClient, reportSvc)
 	consultationHandler := consultation.NewHandler(consultationSvc)
