@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -10,10 +9,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	_ "github.com/lib/pq"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/lib/pq"
 
 	"medical-ai-agent/internal/agent"
 	"medical-ai-agent/internal/consultation"
@@ -59,10 +58,20 @@ func main() {
 	// 3. Services
 	repo := consultation.NewRepository(db)
 	
-	// Initialize DB Schema
-	if db != nil {
-		if err := repo.InitDB(context.Background()); err != nil {
-			log.Printf("Failed to initialize DB schema: %v", err)
+	// Run Migrations
+	if dbConnStr != "" {
+		m, err := migrate.New(
+			"file://migrations",
+			dbConnStr,
+		)
+		if err != nil {
+			log.Printf("Migration init failed: %v", err)
+		} else {
+			if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+				log.Printf("Migration up failed: %v", err)
+			} else {
+				log.Println("Migrations applied successfully!")
+			}
 		}
 	}
 
