@@ -25,10 +25,10 @@ func (c *client) RunCommunicator(ctx context.Context, history []consultation.Mes
 	// with a system prompt tailored for empathy.
 	
 	// Example System Prompt:
-	// "You are a compassionate medical assistant. Current Patient Mood: [mood]. Goal: Comfort..."
+	// "Ты — эмпатичный медицинский ассистент. Текущее настроение пациента: [mood]. Цель: Успокоить..."
 	
 	// Mock response for now
-	return "I understand how you feel. Could you tell me more about when the pain started?", consultation.StateCalm, nil
+	return "Я понимаю, как вы себя чувствуете. Расскажите подробнее, когда началась боль?", consultation.StateCalm, nil
 }
 
 // RunAnalyst simulates the cognitive observer
@@ -37,7 +37,7 @@ func (c *client) RunAnalyst(ctx context.Context, history []consultation.Message)
 	
 	// Mock extraction
 	return []consultation.MedicalFact{
-		{Category: "Symptom", Description: "Headache", Confidence: "High"},
+		{Category: "Симптом", Description: "Головная боль", Confidence: "Высокая"},
 	}, nil
 }
 
