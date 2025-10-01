@@ -18,6 +18,7 @@ import (
 	"medical-ai-agent/internal/consultation"
 	"medical-ai-agent/internal/platform/telegram"
 	"medical-ai-agent/internal/report"
+	"strconv"
 )
 
 func main() {
@@ -75,7 +76,13 @@ func main() {
 		}
 	}
 
-	reportSvc := report.NewService(tgClient, 123456789) // Doctor Chat ID
+	doctorChatIDStr := os.Getenv("DOCTOR_CHAT_ID")
+	doctorChatID, _ := strconv.ParseInt(doctorChatIDStr, 10, 64)
+	if doctorChatID == 0 {
+		log.Println("Warning: DOCTOR_CHAT_ID is not set or invalid. Reports will not be sent correctly.")
+	}
+
+	reportSvc := report.NewService(tgClient, doctorChatID)
 	consultationSvc := consultation.NewService(repo, aiClient, reportSvc)
 	consultationHandler := consultation.NewHandler(consultationSvc)
 
