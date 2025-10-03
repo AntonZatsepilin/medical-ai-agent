@@ -136,7 +136,8 @@ func (c *client) RunSupervisor(ctx context.Context, history []consultation.Messa
 	systemPrompt := fmt.Sprintf(`Ты — супервайзер медицинского опроса.
 Собранные факты:
 %s
-Реши, достаточно ли информации для первичного отчета врачу (основные жалобы, длительность, характер боли).
+Реши, достаточно ли информации для первичного отчета врачу.
+Если есть хотя бы 1-2 факта (симптом), отвечай "ДА".
 Ответь ТОЛЬКО словом "ДА" или "НЕТ".`, factsSummary)
 
 	messages := []chatMessage{{Role: "system", Content: systemPrompt}}
@@ -145,6 +146,8 @@ func (c *client) RunSupervisor(ctx context.Context, history []consultation.Messa
 	if err != nil {
 		return false, err
 	}
+
+	fmt.Printf("Supervisor Response: %s\n", resp)
 
 	return strings.Contains(strings.ToUpper(resp), "ДА"), nil
 }

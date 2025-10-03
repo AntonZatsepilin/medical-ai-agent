@@ -98,10 +98,20 @@ func (s *service) ProcessUserAudio(ctx context.Context, consultationID uuid.UUID
 
 		// Supervisor: Check if we are done
 		isComplete, err := s.aiClient.RunSupervisor(bgCtx, c.History, c.ExtractedFacts)
+		if err != nil {
+			fmt.Printf("Supervisor error: %v\n", err)
+		}
 		if err == nil && isComplete {
+			fmt.Println("Supervisor decided consultation is complete. Sending report...")
 			c.IsComplete = true
 			// Trigger Report Generation
-			_ = s.reportSvc.SendDoctorReport(bgCtx, c)
+			if err := s.reportSvc.SendDoctorReport(bgCtx, c); err != nil {
+				fmt.Printf("Failed to send report: %v\n", err)
+			} else {
+				fmt.Println("Report sent successfully.")
+			}
+		} else {
+			fmt.Println("Supervisor decided consultation is NOT complete yet.")
 		}
 
 		// Save updated cognitive state
