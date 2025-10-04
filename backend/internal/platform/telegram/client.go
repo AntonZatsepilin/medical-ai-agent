@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -34,7 +35,7 @@ func (c *Client) SendMessage(chatID int64, text string) error {
 	reqBody := sendMessageReq{
 		ChatID:    chatID,
 		Text:      text,
-		ParseMode: "Markdown",
+		// ParseMode: "Markdown", // Disable Markdown to avoid parsing errors with special characters
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
@@ -49,7 +50,12 @@ func (c *Client) SendMessage(chatID int64, text string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("telegram api returned status: %s", resp.Status)
+		// Read body to see the error message from Telegram
+		var bodyBytes []byte
+		if resp.Body != nil {
+			bodyBytes, _ = io.ReadAll(resp.Body)
+		}
+		return fmt.Errorf("telegram api returned status: %s, body: %s", resp.Status, string(bodyBytes))
 	}
 
 	return nil
