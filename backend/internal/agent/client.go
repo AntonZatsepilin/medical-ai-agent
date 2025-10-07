@@ -64,8 +64,15 @@ func (c *client) RunCommunicator(ctx context.Context, history []consultation.Mes
 	systemPrompt := fmt.Sprintf(`Ты — эмпатичный медицинский ассистент в приемном отделении.
 Твоя задача: вежливо и мягко опросить пациента о его симптомах, пока он ожидает врача.
 Текущее настроение пациента (по твоей оценке): %s.
-Подстраивайся под тон пациента. Задавай по одному вопросу за раз. Не ставь диагнозы.
-Отвечай кратко, по-человечески.`, mood)
+
+ИНСТРУКЦИЯ ПО ФОРМАТУ ОТВЕТА:
+1. Сначала оцени настроение пациента (Спокойное/Тревожное/Критическое).
+2. Напиши ответ пациенту.
+3. Формат вывода: "[MOOD: <настроение>] <Текст ответа>"
+
+Пример: "[MOOD: Тревожное] Не волнуйтесь, врач скоро подойдет. Скажите, боль острая или тупая?"
+
+Подстраивайся под тон пациента. Задавай по одному вопросу за раз. Не ставь диагнозы.`, mood)
 
 	messages := []chatMessage{{Role: "system", Content: systemPrompt}}
 	for _, msg := range history {
@@ -77,13 +84,29 @@ func (c *client) RunCommunicator(ctx context.Context, history []consultation.Mes
 		return "", consultation.StateNeutral, err
 	}
 
-	// Simple mood analysis based on response (in real world, this would be a separate classification call)
+	// Parse Mood and Content
 	newMood := mood
-	if strings.Contains(strings.ToLower(resp), "успокойтесь") || strings.Contains(strings.ToLower(resp), "не переживайте") {
-		newMood = consultation.StateAnxious
+	content := resp
+
+	if strings.HasPrefix(resp, "[MOOD:") {
+		endIdx := strings.Index(resp, "]")
+		if endIdx != -1 {
+			moodStr := resp[7:endIdx]
+			content = strings.TrimSpace(resp[endIdx+1:])
+			
+			// Map string to EmotionalState
+			switch strings.ToLower(strings.TrimSpace(moodStr)) {
+			case "тревожное", "anxious":
+				newMood = consultation.StateAnxious
+			case "критическое", "critical":
+				newMood = consultation.StateCritical
+			default:
+				newMood = consultation.StateCalm
+			}
+		}
 	}
 
-	return resp, newMood, nil
+	return content, newMood, nil
 }
 
 func (c *client) RunAnalyst(ctx context.Context, history []consultation.Message) ([]consultation.MedicalFact, error) {
@@ -136,8 +159,13 @@ func (c *client) RunSupervisor(ctx context.Context, history []consultation.Messa
 	systemPrompt := fmt.Sprintf(`Ты — супервайзер медицинского опроса.
 Собранные факты:
 %s
-Реши, достаточно ли информации для первичного отчета врачу.
-Если есть хотя бы 1-2 факта (симптом), отвечай "ДА".
+Твоя задача — решить, достаточно ли информации для формирования первичного отчета врачу.
+Критерии завершения:
+1. Понятна основная жалоба (что болит).
+2. Понятна длительность симптомов (как долго).
+3. Есть хотя бы 3 факта в списке.
+
+Если критерии выполнены, отвечай "ДА". Если нужно задать еще вопросы, отвечай "НЕТ".
 Ответь ТОЛЬКО словом "ДА" или "НЕТ".`, factsSummary)
 
 	messages := []chatMessage{{Role: "system", Content: systemPrompt}}
