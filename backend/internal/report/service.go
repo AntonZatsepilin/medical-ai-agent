@@ -27,7 +27,7 @@ func (s *Service) SendDoctorReport(ctx context.Context, c consultation.Consultat
 	var sb strings.Builder
 	sb.WriteString("📋 **Новый отчет о пациенте**\n\n")
 	sb.WriteString(fmt.Sprintf("**ID Пациента:** %s\n", c.PatientID))
-	sb.WriteString(fmt.Sprintf("**Эмоциональное состояние:** %s\n\n", c.CurrentMood))
+	sb.WriteString(fmt.Sprintf("**Эмоциональное состояние:** %s\n\n", translateMood(c.CurrentMood)))
 	
 	sb.WriteString("**Собранные медицинские факты:**\n")
 	if len(c.ExtractedFacts) == 0 {
@@ -41,4 +41,19 @@ func (s *Service) SendDoctorReport(ctx context.Context, c consultation.Consultat
 	sb.WriteString("Опрос пациента завершен. Пожалуйста, ознакомьтесь с фактами выше.")
 
 	return s.tgClient.SendMessage(s.doctorChatID, sb.String())
+}
+
+func translateMood(mood consultation.EmotionalState) string {
+	switch mood {
+	case consultation.StateAnxious:
+		return "Тревожное"
+	case consultation.StateCritical:
+		return "Критическое"
+	case consultation.StateCalm:
+		return "Спокойное"
+	case consultation.StateNeutral:
+		return "Нейтральное"
+	default:
+		return string(mood)
+	}
 }

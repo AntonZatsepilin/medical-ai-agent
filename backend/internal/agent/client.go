@@ -66,13 +66,17 @@ func (c *client) RunCommunicator(ctx context.Context, history []consultation.Mes
 Текущее настроение пациента (по твоей оценке): %s.
 
 ИНСТРУКЦИЯ ПО ФОРМАТУ ОТВЕТА:
-1. Сначала оцени настроение пациента (Спокойное/Тревожное/Критическое).
+1. Сначала оцени настроение пациента, используя ТОЛЬКО эти термины: "Спокойное", "Тревожное", "Критическое".
 2. Напиши ответ пациенту.
 3. Формат вывода: "[MOOD: <настроение>] <Текст ответа>"
 
 Пример: "[MOOD: Тревожное] Не волнуйтесь, врач скоро подойдет. Скажите, боль острая или тупая?"
 
-Подстраивайся под тон пациента. Задавай по одному вопросу за раз. Не ставь диагнозы.`, mood)
+ВАЖНО:
+- Если пациент напуган, успокой его.
+- Если пациент говорит кратко, задавай уточняющие вопросы.
+- Не ставь диагнозы.
+- Задавай только ОДИН вопрос за раз.`, mood)
 
 	messages := []chatMessage{{Role: "system", Content: systemPrompt}}
 	for _, msg := range history {
@@ -100,6 +104,8 @@ func (c *client) RunCommunicator(ctx context.Context, history []consultation.Mes
 				newMood = consultation.StateAnxious
 			case "критическое", "critical":
 				newMood = consultation.StateCritical
+			case "спокойное", "calm", "neutral", "нейтральное":
+				newMood = consultation.StateCalm
 			default:
 				newMood = consultation.StateCalm
 			}
@@ -147,7 +153,8 @@ func (c *client) RunAnalyst(ctx context.Context, history []consultation.Message)
 }
 
 func (c *client) RunSupervisor(ctx context.Context, history []consultation.Message, facts []consultation.MedicalFact) (bool, error) {
-	if len(history) < 4 {
+	// Don't even bother the AI if we have very little history
+	if len(history) < 6 {
 		return false, nil
 	}
 
@@ -156,16 +163,21 @@ func (c *client) RunSupervisor(ctx context.Context, history []consultation.Messa
 		factsSummary += fmt.Sprintf("- %s: %s\n", f.Category, f.Description)
 	}
 
-	systemPrompt := fmt.Sprintf(`Ты — супервайзер медицинского опроса.
+	systemPrompt := fmt.Sprintf(`Ты — строгий супервайзер медицинского опроса.
 Собранные факты:
 %s
-Твоя задача — решить, достаточно ли информации для формирования первичного отчета врачу.
-Критерии завершения:
-1. Понятна основная жалоба (что болит).
-2. Понятна длительность симптомов (как долго).
-3. Есть хотя бы 3 факта в списке.
+Твоя задача — решить, можно ли ЗАВЕРШАТЬ опрос и отправлять отчет врачу.
 
-Если критерии выполнены, отвечай "ДА". Если нужно задать еще вопросы, отвечай "НЕТ".
+КРИТЕРИИ ЗАВЕРШЕНИЯ (Все должны быть выполнены):
+1. Мы точно знаем, что именно беспокоит пациента (Основная жалоба).
+2. Мы знаем, как давно это началось (Длительность).
+3. Мы знаем характер симптомов (острая/тупая боль, температура и т.д.).
+4. Пациент явно дал понять, что рассказал всё, что хотел, ИЛИ мы собрали исчерпывающий анамнез (минимум 4-5 фактов).
+
+Если диалог только начался или фактов мало — отвечай "НЕТ".
+Если пациент просто поздоровался или сказал одну фразу — отвечай "НЕТ".
+Только если картина полная — отвечай "ДА".
+
 Ответь ТОЛЬКО словом "ДА" или "НЕТ".`, factsSummary)
 
 	messages := []chatMessage{{Role: "system", Content: systemPrompt}}
