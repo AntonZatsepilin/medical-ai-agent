@@ -38,7 +38,12 @@ func (s *Service) SendDoctorReport(ctx context.Context, c consultation.Consultat
 	}
 
 	sb.WriteString("\n**Итог:**\n")
-	sb.WriteString("Опрос пациента завершен. Пожалуйста, ознакомьтесь с фактами выше.")
+	sb.WriteString("Опрос пациента завершен. Пожалуйста, ознакомьтесь с фактами выше.\n\n")
+
+	if c.Recommendations != "" {
+		sb.WriteString("**Рекомендации AI:**\n")
+		sb.WriteString(c.Recommendations)
+	}
 
 	return s.tgClient.SendMessage(s.doctorChatID, sb.String())
 }

@@ -42,6 +42,9 @@ type Consultation struct {
 	// Emotional Module State
 	CurrentMood EmotionalState `json:"mood" db:"mood"`
 
+	// Output
+	Recommendations string `json:"recommendations" db:"recommendations"`
+
 	// Metacognition Status
 	IsComplete bool      `json:"is_complete" db:"is_complete"`
 	CreatedAt  time.Time `json:"created_at" db:"created_at"`

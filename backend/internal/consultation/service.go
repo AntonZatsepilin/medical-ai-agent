@@ -14,6 +14,7 @@ type AgentClient interface {
 	RunCommunicator(ctx context.Context, history []Message, mood EmotionalState) (string, EmotionalState, error)
 	RunAnalyst(ctx context.Context, history []Message) ([]MedicalFact, error)
 	RunSupervisor(ctx context.Context, history []Message, facts []MedicalFact) (bool, error)
+	GenerateRecommendations(ctx context.Context, facts []MedicalFact) (string, error)
 }
 
 // ReportService defines the interface for sending reports
@@ -104,8 +105,19 @@ func (s *service) ProcessUserAudio(ctx context.Context, consultationID uuid.UUID
 				fmt.Printf("Supervisor error: %v\n", err)
 			}
 			if err == nil && isComplete {
-				fmt.Println("Supervisor decided consultation is complete. Sending report...")
+				fmt.Println("Supervisor decided consultation is complete. Generating recommendations...")
+				
+				// Generate Recommendations
+				recs, err := s.aiClient.GenerateRecommendations(bgCtx, c.ExtractedFacts)
+				if err != nil {
+					fmt.Printf("Failed to generate recommendations: %v\n", err)
+					c.Recommendations = "Не удалось сгенерировать рекомендации."
+				} else {
+					c.Recommendations = recs
+				}
+
 				c.IsComplete = true
+				
 				// Trigger Report Generation
 				if err := s.reportSvc.SendDoctorReport(bgCtx, c); err != nil {
 					fmt.Printf("Failed to send report: %v\n", err)

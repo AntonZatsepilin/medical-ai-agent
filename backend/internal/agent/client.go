@@ -18,6 +18,7 @@ type DeepSeekClient interface {
 	RunCommunicator(ctx context.Context, history []consultation.Message, mood consultation.EmotionalState) (string, consultation.EmotionalState, error)
 	RunAnalyst(ctx context.Context, history []consultation.Message) ([]consultation.MedicalFact, error)
 	RunSupervisor(ctx context.Context, history []consultation.Message, facts []consultation.MedicalFact) (bool, error)
+	GenerateRecommendations(ctx context.Context, facts []consultation.MedicalFact) (string, error)
 }
 
 type client struct {
@@ -119,6 +120,12 @@ func (c *client) RunAnalyst(ctx context.Context, history []consultation.Message)
 	systemPrompt := `Ты — медицинский аналитик. Твоя задача — извлекать факты из диалога.
 Верни ТОЛЬКО валидный JSON массив объектов. Не пиши ничего кроме JSON.
 Формат: [{"category": "Симптом/Лекарство/Хронология", "description": "...", "confidence": "Высокая/Средняя/Низкая"}]
+
+КРИТЕРИИ УВЕРЕННОСТИ:
+- "Высокая": Пациент сказал четко и прямо (напр. "Болит голова 3 дня").
+- "Средняя": Пациент выразился неточно или использовал слова "вроде", "наверное" (напр. "Кажется, температура была").
+- "Низкая": Информацию пришлось додумывать или пациент путается в показаниях.
+
 Если новых фактов нет, верни пустой массив [].`
 
 	messages := []chatMessage{{Role: "system", Content: systemPrompt}}
@@ -190,6 +197,29 @@ func (c *client) RunSupervisor(ctx context.Context, history []consultation.Messa
 	fmt.Printf("Supervisor Response: %s\n", resp)
 
 	return strings.Contains(strings.ToUpper(resp), "ДА"), nil
+}
+
+func (c *client) GenerateRecommendations(ctx context.Context, facts []consultation.MedicalFact) (string, error) {
+	factsSummary := ""
+	for _, f := range facts {
+		factsSummary += fmt.Sprintf("- %s: %s (Уверенность: %s)\n", f.Category, f.Description, f.Confidence)
+	}
+
+	systemPrompt := fmt.Sprintf(`Ты — старший врач-консультант.
+На основе собранных фактов составь краткие рекомендации для дежурного врача.
+Факты:
+%s
+
+Твоя задача:
+1. Предположить возможную срочность (Триаж: Зеленый/Желтый/Красный).
+2. Предложить список необходимых обследований (анализы, рентген и т.д.).
+3. Дать краткое резюме случая.
+
+Ответ должен быть кратким, структурированным текстом (не JSON).`, factsSummary)
+
+	messages := []chatMessage{{Role: "system", Content: systemPrompt}}
+
+	return c.makeRequest(ctx, messages, 0.3, false)
 }
 
 // --- Helper ---
