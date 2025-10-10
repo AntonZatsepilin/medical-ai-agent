@@ -8,13 +8,26 @@ interface IWindow extends Window {
 
 const VoiceChat: React.FC = () => {
   const [isListening, setIsListening] = useState(false);
+  const [isHandsFree, setIsHandsFree] = useState(true); // Default to true as requested
   const [messages, setMessages] = useState<{role: string, text: string}[]>([]);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  
   const recognitionRef = useRef<any>(null);
   const consultationIdRef = useRef<string | null>(null);
+  const isProcessingRef = useRef(false); // To prevent double submissions
 
   useEffect(() => {
     // Initialize Consultation on mount
     createConsultation();
+
+    // Load Voices
+    const loadVoices = () => {
+      const availableVoices = window.speechSynthesis.getVoices();
+      setVoices(availableVoices.filter(v => v.lang.includes('ru')));
+    };
+    
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    loadVoices();
 
     // Initialize Web Speech API
     const { webkitSpeechRecognition, SpeechRecognition } = window as unknown as IWindow;
@@ -22,15 +35,34 @@ const VoiceChat: React.FC = () => {
 
     if (SpeechRecognitionConstructor) {
       recognitionRef.current = new SpeechRecognitionConstructor();
-      recognitionRef.current.continuous = false;
+      recognitionRef.current.continuous = false; // We handle restart manually for better control
       recognitionRef.current.lang = 'ru-RU';
+      recognitionRef.current.interimResults = false;
 
       recognitionRef.current.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
-        handleUserMessage(transcript);
+        if (transcript.trim()) {
+            handleUserMessage(transcript);
+        }
       };
 
-      recognitionRef.current.onend = () => setIsListening(false);
+      recognitionRef.current.onend = () => {
+        // If we are NOT processing a message and HandsFree is ON, we might want to restart?
+        // Actually, we stop listening when processing to avoid picking up TTS.
+        // We only restart explicitly after TTS finishes.
+        if (!isProcessingRef.current && isHandsFree) {
+             // Optional: silence detection logic could go here, but for now we rely on the loop:
+             // Speak -> Stop -> Process -> TTS -> Start
+             setIsListening(false);
+        } else {
+            setIsListening(false);
+        }
+      };
+      
+      recognitionRef.current.onerror = (event: any) => {
+          console.error("Speech recognition error", event.error);
+          setIsListening(false);
+      };
     }
   }, []);
 
@@ -49,9 +81,17 @@ const VoiceChat: React.FC = () => {
   };
 
   const handleUserMessage = async (text: string) => {
-    setMessages(prev => [...prev, { role: 'user', text }]);
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+    recognitionRef.current?.stop(); // Stop listening while processing
+    setIsListening(false);
 
-    if (!consultationIdRef.current) return;
+    setMessages((prev: {role: string, text: string}[]) => [...prev, { role: 'user', text }]);
+
+    if (!consultationIdRef.current) {
+        isProcessingRef.current = false;
+        return;
+    }
 
     try {
       const res = await fetch('/api/consultation/chat', {
@@ -66,26 +106,63 @@ const VoiceChat: React.FC = () => {
       const data = await res.json();
       const aiResponse = data.response;
 
-      setMessages(prev => [...prev, { role: 'assistant', text: aiResponse }]);
-      speakResponse(aiResponse);
+      setMessages((prev: {role: string, text: string}[]) => [...prev, { role: 'assistant', text: aiResponse }]);
+      
+      // Speak response and THEN restart listening if hands-free
+      speakResponse(aiResponse, () => {
+        isProcessingRef.current = false;
+        if (isHandsFree) {
+            startListening();
+        }
+      });
 
     } catch (error) {
       console.error("Error sending message", error);
+      isProcessingRef.current = false;
     }
   };
 
-  const speakResponse = (text: string) => {
+  const speakResponse = (text: string, onEnd?: () => void) => {
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'ru-RU';
+    
+    // Try to find a "Google" voice or a female voice for better realism
+    const preferredVoice = voices.find((v: SpeechSynthesisVoice) => v.name.includes('Google') && v.lang.includes('ru')) 
+                        || voices.find((v: SpeechSynthesisVoice) => v.lang.includes('ru'));
+    
+    if (preferredVoice) {
+        utterance.voice = preferredVoice;
+    }
+
+    // Tweak parameters for more natural sound
+    utterance.pitch = 1.0;
+    utterance.rate = 1.1; // Slightly faster is often more natural for bots
+
+    utterance.onend = () => {
+        if (onEnd) onEnd();
+    };
+
     window.speechSynthesis.speak(utterance);
+  };
+
+  const startListening = () => {
+      try {
+        recognitionRef.current?.start();
+        setIsListening(true);
+      } catch (e) {
+          // Already started
+      }
   };
 
   const toggleRecording = () => {
     if (isListening) {
       recognitionRef.current?.stop();
+      setIsListening(false);
     } else {
-      recognitionRef.current?.start();
-      setIsListening(true);
+      startListening();
     }
   };
 
@@ -99,10 +176,16 @@ const VoiceChat: React.FC = () => {
             <h2 className="text-2xl font-bold">Медицинский Ассистент</h2>
             <p className="text-indigo-100 text-sm">Ваш персональный помощник здоровья</p>
           </div>
-          <div className="h-10 w-10 bg-white/20 rounded-full flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-            </svg>
+          <div className="flex items-center gap-4">
+             <div className="flex items-center gap-2 bg-indigo-700 px-3 py-1 rounded-full text-xs cursor-pointer" onClick={() => setIsHandsFree(!isHandsFree)}>
+                <div className={`w-2 h-2 rounded-full ${isHandsFree ? 'bg-green-400' : 'bg-gray-400'}`}></div>
+                {isHandsFree ? 'Hands-Free' : 'Push-to-Talk'}
+             </div>
+             <div className="h-10 w-10 bg-white/20 rounded-full flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                </svg>
+             </div>
           </div>
         </div>
 
@@ -110,7 +193,9 @@ const VoiceChat: React.FC = () => {
         <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
           {messages.length === 0 && (
             <div className="text-center text-gray-400 mt-20">
-              <p className="text-lg">Нажмите кнопку микрофона, чтобы начать общение</p>
+              <p className="text-lg">
+                  {isHandsFree ? "Скажите 'Привет', чтобы начать" : "Нажмите кнопку микрофона, чтобы начать общение"}
+              </p>
             </div>
           )}
           
@@ -150,12 +235,14 @@ const VoiceChat: React.FC = () => {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                 </svg>
-                Нажмите, чтобы говорить
+                {isHandsFree ? 'Начать диалог' : 'Нажмите, чтобы говорить'}
               </>
             )}
           </button>
           <p className="text-center text-gray-400 text-xs mt-3">
-            Ваши данные защищены и используются только для медицинского анализа
+            {isHandsFree 
+                ? "Режим Hands-Free включен. Ассистент будет слушать вас автоматически после своего ответа." 
+                : "Нажмите кнопку, чтобы записать ответ."}
           </p>
         </div>
       </div>
