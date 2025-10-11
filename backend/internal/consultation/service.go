@@ -22,23 +22,37 @@ type ReportService interface {
 	SendDoctorReport(ctx context.Context, c Consultation) error
 }
 
+// TTSClient defines the interface for Text-to-Speech
+type TTSClient interface {
+	Synthesize(ctx context.Context, text string, voiceID string) ([]byte, error)
+}
+
 type Service interface {
 	ProcessUserAudio(ctx context.Context, consultationID uuid.UUID, transcribedText string) (string, error)
 	CreateConsultation(ctx context.Context, patientID uuid.UUID) (*Consultation, error)
+	SynthesizeSpeech(ctx context.Context, text string) ([]byte, error)
 }
 
 type service struct {
 	repo         Repository
 	aiClient     AgentClient
+	ttsClient    TTSClient
 	reportSvc    ReportService
 }
 
-func NewService(repo Repository, ai AgentClient, report ReportService) Service {
+func NewService(repo Repository, ai AgentClient, tts TTSClient, report ReportService) Service {
 	return &service{
 		repo:      repo,
 		aiClient:  ai,
+		ttsClient: tts,
 		reportSvc: report,
 	}
+}
+
+func (s *service) SynthesizeSpeech(ctx context.Context, text string) ([]byte, error) {
+	// Use a default voice ID or load from config/env if needed
+	// For now, we'll let the client use its default or pass empty
+	return s.ttsClient.Synthesize(ctx, text, "")
 }
 
 func (s *service) CreateConsultation(ctx context.Context, patientID uuid.UUID) (*Consultation, error) {

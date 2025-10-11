@@ -53,6 +53,9 @@ func main() {
 	deepSeekKey := os.Getenv("DEEPSEEK_API_KEY")
 	aiClient := agent.NewDeepSeekClient(deepSeekKey)
 
+	elevenLabsKey := os.Getenv("ELEVENLABS_API_KEY")
+	ttsClient := agent.NewElevenLabsClient(elevenLabsKey)
+
 	tgToken := os.Getenv("TELEGRAM_BOT_TOKEN")
 	tgClient := telegram.NewClient(tgToken)
 
@@ -83,7 +86,7 @@ func main() {
 	}
 
 	reportSvc := report.NewService(tgClient, doctorChatID)
-	consultationSvc := consultation.NewService(repo, aiClient, reportSvc)
+	consultationSvc := consultation.NewService(repo, aiClient, ttsClient, reportSvc)
 	consultationHandler := consultation.NewHandler(consultationSvc)
 
 	// 4. Router

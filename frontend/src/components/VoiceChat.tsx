@@ -122,30 +122,54 @@ const VoiceChat: React.FC = () => {
     }
   };
 
-  const speakResponse = (text: string, onEnd?: () => void) => {
-    // Cancel any ongoing speech
-    window.speechSynthesis.cancel();
+  const speakResponse = async (text: string, onEnd?: () => void) => {
+    // Try ElevenLabs TTS via Backend
+    try {
+        const res = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text }),
+        });
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ru-RU';
-    
-    // Try to find a "Google" voice or a female voice for better realism
-    const preferredVoice = voices.find((v: SpeechSynthesisVoice) => v.name.includes('Google') && v.lang.includes('ru')) 
-                        || voices.find((v: SpeechSynthesisVoice) => v.lang.includes('ru'));
-    
-    if (preferredVoice) {
-        utterance.voice = preferredVoice;
+        if (!res.ok) {
+            throw new Error("TTS API failed");
+        }
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        
+        audio.onended = () => {
+            if (onEnd) onEnd();
+            URL.revokeObjectURL(url);
+        };
+        
+        audio.play();
+        return;
+
+    } catch (e) {
+        console.warn("Falling back to browser TTS due to error:", e);
+        // Fallback to Browser TTS
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'ru-RU';
+        
+        const preferredVoice = voices.find((v: SpeechSynthesisVoice) => v.name.includes('Google') && v.lang.includes('ru')) 
+                            || voices.find((v: SpeechSynthesisVoice) => v.lang.includes('ru'));
+        
+        if (preferredVoice) {
+            utterance.voice = preferredVoice;
+        }
+
+        utterance.pitch = 1.0;
+        utterance.rate = 1.1;
+
+        utterance.onend = () => {
+            if (onEnd) onEnd();
+        };
+
+        window.speechSynthesis.speak(utterance);
     }
-
-    // Tweak parameters for more natural sound
-    utterance.pitch = 1.0;
-    utterance.rate = 1.1; // Slightly faster is often more natural for bots
-
-    utterance.onend = () => {
-        if (onEnd) onEnd();
-    };
-
-    window.speechSynthesis.speak(utterance);
   };
 
   const startListening = () => {

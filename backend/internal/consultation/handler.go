@@ -73,7 +73,29 @@ func (h *Handler) HandleVoiceInput(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type TTSRequest struct {
+	Text string `json:"text"`
+}
+
+func (h *Handler) HandleTTS(w http.ResponseWriter, r *http.Request) {
+	var req TTSRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	audioData, err := h.svc.SynthesizeSpeech(r.Context(), req.Text)
+	if err != nil {
+		http.Error(w, "TTS failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "audio/mpeg")
+	w.Write(audioData)
+}
+
 func RegisterRoutes(r chi.Router, h *Handler) {
 	r.Post("/consultation", h.CreateConsultation)
 	r.Post("/consultation/chat", h.HandleVoiceInput)
+	r.Post("/tts", h.HandleTTS)
 }
