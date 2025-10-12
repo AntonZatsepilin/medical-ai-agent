@@ -10,20 +10,19 @@ import (
 	"time"
 )
 
-const elevenLabsAPIURL = "https://api.elevenlabs.io/v1/text-to-speech"
+// Local Silero TTS Service URL (from docker-compose)
+const ttsServiceURL = "http://tts:8000/generate"
 
 type TTSClient interface {
 	Synthesize(ctx context.Context, text string, voiceID string) ([]byte, error)
 }
 
-type elevenLabsClient struct {
-	apiKey     string
+type sileroClient struct {
 	httpClient *http.Client
 }
 
-func NewElevenLabsClient(apiKey string) TTSClient {
-	return &elevenLabsClient{
-		apiKey: apiKey,
+func NewSileroClient() TTSClient {
+	return &sileroClient{
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
@@ -32,36 +31,28 @@ func NewElevenLabsClient(apiKey string) TTSClient {
 
 type ttsRequest struct {
 	Text    string `json:"text"`
-	ModelID string `json:"model_id"`
-	VoiceSettings struct {
-		Stability       float64 `json:"stability"`
-		SimilarityBoost float64 `json:"similarity_boost"`
-	} `json:"voice_settings"`
+	Speaker string `json:"speaker"` // xenia, kseniya, aidar, baya, eugene
 }
 
-func (c *elevenLabsClient) Synthesize(ctx context.Context, text string, voiceID string) ([]byte, error) {
-	if voiceID == "" {
-		voiceID = "21m00Tcm4TlvDq8ikWAM" // Default Rachel
+func (c *sileroClient) Synthesize(ctx context.Context, text string, voiceID string) ([]byte, error) {
+	// Map "voiceID" to Silero speakers if needed, or use default
+	speaker := "xenia" // Default female voice
+	if voiceID != "" {
+		speaker = voiceID
 	}
-
-	url := fmt.Sprintf("%s/%s", elevenLabsAPIURL, voiceID)
 
 	reqBody := ttsRequest{
 		Text:    text,
-		ModelID: "eleven_multilingual_v2", // Best for Russian
+		Speaker: speaker,
 	}
-	// Default settings for stability
-	reqBody.VoiceSettings.Stability = 0.5
-	reqBody.VoiceSettings.SimilarityBoost = 0.75
 
 	jsonBody, _ := json.Marshal(reqBody)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", ttsServiceURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("xi-api-key", c.apiKey)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

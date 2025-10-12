@@ -53,8 +53,8 @@ func main() {
 	deepSeekKey := os.Getenv("DEEPSEEK_API_KEY")
 	aiClient := agent.NewDeepSeekClient(deepSeekKey)
 
-	elevenLabsKey := os.Getenv("ELEVENLABS_API_KEY")
-	ttsClient := agent.NewElevenLabsClient(elevenLabsKey)
+	// Use local Silero TTS
+	ttsClient := agent.NewSileroClient()
 
 	tgToken := os.Getenv("TELEGRAM_BOT_TOKEN")
 	tgClient := telegram.NewClient(tgToken)
