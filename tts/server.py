@@ -4,6 +4,8 @@ from pydantic import BaseModel
 import io
 import uvicorn
 from fastapi.responses import Response
+import soundfile as sf
+import numpy as np
 
 app = FastAPI()
 
@@ -31,21 +33,12 @@ async def generate_audio(req: TTSRequest):
                                 speaker=req.speaker,
                                 sample_rate=req.sample_rate)
         
-        # Convert tensor to wav bytes
-        # Silero returns a tensor. We need to save it to a buffer.
-        # The model has a save_wav method but it saves to disk.
-        # We can use torchaudio or simple wave module if we convert to numpy.
-        # Actually, model.apply_tts returns a 1D tensor.
-        
-        # Let's use a helper to convert to WAV in memory
-        # Standard way with torchaudio:
-        import torchaudio
-        
-        # Add batch dimension [1, T]
-        audio_tensor = audio.unsqueeze(0)
+        # Convert tensor to wav bytes using soundfile directly
+        # audio is a 1D tensor
+        audio_np = audio.numpy()
         
         buffer = io.BytesIO()
-        torchaudio.save(buffer, audio_tensor, req.sample_rate, format="wav")
+        sf.write(buffer, audio_np, req.sample_rate, format='WAV')
         buffer.seek(0)
         
         return Response(content=buffer.read(), media_type="audio/wav")
