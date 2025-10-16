@@ -13,11 +13,12 @@ app = FastAPI()
 device = torch.device('cpu')
 local_file = 'model.pt'
 
-print("Loading Silero TTS model...")
+print("Loading Silero TTS model (V5)...")
+# Using V5 model which has better quality and stress handling
 model, _ = torch.hub.load(repo_or_dir='snakers4/silero-models',
                           model='silero_tts',
                           language='ru',
-                          speaker='v4_ru')
+                          speaker='v5_ru')
 model.to(device)
 print("Model loaded.")
 

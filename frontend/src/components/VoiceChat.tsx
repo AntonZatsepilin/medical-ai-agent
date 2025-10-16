@@ -139,12 +139,18 @@ const VoiceChat: React.FC = () => {
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
         
+        // Important: Handle audio loading errors
+        audio.onerror = (e) => {
+            console.error("Audio playback error", e);
+            if (onEnd) onEnd();
+        };
+
         audio.onended = () => {
             if (onEnd) onEnd();
             URL.revokeObjectURL(url);
         };
         
-        audio.play();
+        await audio.play();
         return;
 
     } catch (e) {

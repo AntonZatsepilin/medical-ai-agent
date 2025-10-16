@@ -15,6 +15,6 @@ RUN pip install --no-cache-dir fastapi uvicorn omegaconf soundfile numpy
 COPY server.py .
 
 # Pre-download the model during build to speed up startup
-RUN python -c "import torch; torch.hub.load(repo_or_dir='snakers4/silero-models', model='silero_tts', language='ru', speaker='v4_ru')"
+RUN python -c "import torch; torch.hub.load(repo_or_dir='snakers4/silero-models', model='silero_tts', language='ru', speaker='v5_ru')"
 
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
