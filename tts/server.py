@@ -24,7 +24,7 @@ print("Model loaded.")
 
 class TTSRequest(BaseModel):
     text: str
-    speaker: str = "xenia" # Options: aidar, baya, kseniya, xenia, eugene
+    speaker: str = "aidar" # Options: aidar, baya, kseniya, xenia, eugene
     sample_rate: int = 48000
 
 @app.post("/generate")

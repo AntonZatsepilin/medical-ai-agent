@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
 # Install Python dependencies
 # torch and torchaudio are large, so we install them first to cache the layer
 RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir fastapi uvicorn omegaconf soundfile numpy
+RUN pip install --no-cache-dir fastapi uvicorn omegaconf soundfile numpy scipy
 
 COPY server.py .
 
