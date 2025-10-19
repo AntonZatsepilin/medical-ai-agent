@@ -125,6 +125,7 @@ const VoiceChat: React.FC = () => {
   const speakResponse = async (text: string, onEnd?: () => void) => {
     // Try ElevenLabs TTS via Backend
     try {
+        console.log("Requesting TTS from backend...");
         const res = await fetch('/api/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -132,10 +133,16 @@ const VoiceChat: React.FC = () => {
         });
 
         if (!res.ok) {
-            throw new Error("TTS API failed");
+            throw new Error(`TTS API failed with status ${res.status}`);
         }
 
         const blob = await res.blob();
+        console.log("TTS Blob received, size:", blob.size);
+        
+        if (blob.size < 1000) {
+             throw new Error("TTS Blob too small, likely error");
+        }
+
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
         
@@ -151,6 +158,7 @@ const VoiceChat: React.FC = () => {
         };
         
         await audio.play();
+        console.log("Audio playback started");
         return;
 
     } catch (e) {

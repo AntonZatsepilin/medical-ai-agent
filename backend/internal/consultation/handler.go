@@ -90,7 +90,7 @@ func (h *Handler) HandleTTS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "audio/mpeg")
+	w.Header().Set("Content-Type", "audio/wav")
 	w.Write(audioData)
 }
 
