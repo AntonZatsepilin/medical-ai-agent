@@ -14,7 +14,8 @@ const VoiceChat: React.FC = () => {
   
   const recognitionRef = useRef<any>(null);
   const consultationIdRef = useRef<string | null>(null);
-  const isProcessingRef = useRef(false); // To prevent double submissions
+  const isProcessingRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     // Initialize Consultation on mount
@@ -35,7 +36,7 @@ const VoiceChat: React.FC = () => {
 
     if (SpeechRecognitionConstructor) {
       recognitionRef.current = new SpeechRecognitionConstructor();
-      recognitionRef.current.continuous = false; // We handle restart manually for better control
+      recognitionRef.current.continuous = false;
       recognitionRef.current.lang = 'ru-RU';
       recognitionRef.current.interimResults = false;
 
@@ -47,12 +48,7 @@ const VoiceChat: React.FC = () => {
       };
 
       recognitionRef.current.onend = () => {
-        // If we are NOT processing a message and HandsFree is ON, we might want to restart?
-        // Actually, we stop listening when processing to avoid picking up TTS.
-        // We only restart explicitly after TTS finishes.
         if (!isProcessingRef.current && isHandsFree) {
-             // Optional: silence detection logic could go here, but for now we rely on the loop:
-             // Speak -> Stop -> Process -> TTS -> Start
              setIsListening(false);
         } else {
             setIsListening(false);
@@ -60,11 +56,22 @@ const VoiceChat: React.FC = () => {
       };
       
       recognitionRef.current.onerror = (event: any) => {
+          if (event.error === 'aborted') return; // Ignore manual stop
           console.error("Speech recognition error", event.error);
           setIsListening(false);
       };
     }
   }, []);
+
+  const initAudioContext = () => {
+    if (!audioContextRef.current) {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      audioContextRef.current = new AudioContextClass();
+    }
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
+    }
+  };
 
   const createConsultation = async () => {
     try {
@@ -143,22 +150,25 @@ const VoiceChat: React.FC = () => {
              throw new Error("TTS Blob too small, likely error");
         }
 
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
+        // Use Web Audio API for playback to avoid Autoplay Policy issues
+        if (!audioContextRef.current) {
+             initAudioContext();
+        }
         
-        // Important: Handle audio loading errors
-        audio.onerror = (e) => {
-            console.error("Audio playback error", e);
+        const ctx = audioContextRef.current!;
+        const arrayBuffer = await blob.arrayBuffer();
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+        
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(ctx.destination);
+        
+        source.onended = () => {
             if (onEnd) onEnd();
         };
-
-        audio.onended = () => {
-            if (onEnd) onEnd();
-            URL.revokeObjectURL(url);
-        };
         
-        await audio.play();
-        console.log("Audio playback started");
+        source.start(0);
+        console.log("Audio playback started via Web Audio API");
         return;
 
     } catch (e) {
@@ -196,6 +206,7 @@ const VoiceChat: React.FC = () => {
   };
 
   const toggleRecording = () => {
+    initAudioContext();
     if (isListening) {
       recognitionRef.current?.stop();
       setIsListening(false);
