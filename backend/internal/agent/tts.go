@@ -36,7 +36,7 @@ type ttsRequest struct {
 
 func (c *sileroClient) Synthesize(ctx context.Context, text string, voiceID string) ([]byte, error) {
 	// Map "voiceID" to Silero speakers if needed, or use default
-	speaker := "aidar" // Default male voice
+	speaker := "kseniya" // Default female voice
 	if voiceID != "" {
 		speaker = voiceID
 	}

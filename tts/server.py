@@ -24,15 +24,21 @@ print("Model loaded.")
 
 class TTSRequest(BaseModel):
     text: str
-    speaker: str = "aidar" # Options: aidar, baya, kseniya, xenia, eugene
+    speaker: str = "kseniya" # Options: aidar, baya, kseniya, xenia, eugene
     sample_rate: int = 48000
 
 @app.post("/generate")
 async def generate_audio(req: TTSRequest):
     try:
-        audio = model.apply_tts(text=req.text,
+        # Use SSML to control speed (rate)
+        # rate="1.2" means 20% faster
+        ssml_text = f"<speak><prosody rate='1.2'>{req.text}</prosody></speak>"
+        
+        audio = model.apply_tts(ssml_text=ssml_text,
                                 speaker=req.speaker,
-                                sample_rate=req.sample_rate)
+                                sample_rate=req.sample_rate,
+                                put_accent=True,
+                                put_yo=True)
         
         # Convert tensor to wav bytes using soundfile directly
         # audio is a 1D tensor
