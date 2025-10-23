@@ -30,11 +30,9 @@ class TTSRequest(BaseModel):
 @app.post("/generate")
 async def generate_audio(req: TTSRequest):
     try:
-        # Use SSML to control speed (rate)
-        # rate="1.2" means 20% faster
-        ssml_text = f"<speak><prosody rate='1.2'>{req.text}</prosody></speak>"
-        
-        audio = model.apply_tts(ssml_text=ssml_text,
+        # Reverting SSML as it caused 500 errors. 
+        # Using text with auto-accents for better quality.
+        audio = model.apply_tts(text=req.text,
                                 speaker=req.speaker,
                                 sample_rate=req.sample_rate,
                                 put_accent=True,
