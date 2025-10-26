@@ -27,26 +27,38 @@ type TTSClient interface {
 	Synthesize(ctx context.Context, text string, voiceID string) ([]byte, error)
 }
 
+// STTClient defines the interface for Speech-to-Text
+type STTClient interface {
+	Transcribe(ctx context.Context, audioData []byte) (string, error)
+}
+
 type Service interface {
 	ProcessUserAudio(ctx context.Context, consultationID uuid.UUID, transcribedText string) (string, error)
 	CreateConsultation(ctx context.Context, patientID uuid.UUID) (*Consultation, error)
 	SynthesizeSpeech(ctx context.Context, text string) ([]byte, error)
+	TranscribeAudio(ctx context.Context, audioData []byte) (string, error)
 }
 
 type service struct {
 	repo         Repository
 	aiClient     AgentClient
 	ttsClient    TTSClient
+	sttClient    STTClient
 	reportSvc    ReportService
 }
 
-func NewService(repo Repository, ai AgentClient, tts TTSClient, report ReportService) Service {
+func NewService(repo Repository, ai AgentClient, tts TTSClient, stt STTClient, report ReportService) Service {
 	return &service{
 		repo:      repo,
 		aiClient:  ai,
 		ttsClient: tts,
+		sttClient: stt,
 		reportSvc: report,
 	}
+}
+
+func (s *service) TranscribeAudio(ctx context.Context, audioData []byte) (string, error) {
+	return s.sttClient.Transcribe(ctx, audioData)
 }
 
 func (s *service) SynthesizeSpeech(ctx context.Context, text string) ([]byte, error) {

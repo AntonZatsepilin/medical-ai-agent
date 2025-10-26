@@ -5,12 +5,13 @@ WORKDIR /app
 # Install system dependencies for audio
 RUN apt-get update && apt-get install -y \
     libsndfile1 \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 # torch and torchaudio are large, so we install them first to cache the layer
 RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir fastapi uvicorn omegaconf soundfile numpy scipy
+RUN pip install --no-cache-dir fastapi uvicorn omegaconf soundfile numpy scipy faster-whisper python-multipart
 
 COPY server.py .
 

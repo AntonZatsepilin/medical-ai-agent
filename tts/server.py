@@ -1,15 +1,18 @@
 import torch
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
 import io
 import uvicorn
 from fastapi.responses import Response
 import soundfile as sf
 import numpy as np
+from faster_whisper import WhisperModel
+import os
+import tempfile
 
 app = FastAPI()
 
-# Load model on startup
+# Load TTS model on startup
 device = torch.device('cpu')
 local_file = 'model.pt'
 
@@ -20,7 +23,13 @@ model, _ = torch.hub.load(repo_or_dir='snakers4/silero-models',
                           language='ru',
                           speaker='v5_ru')
 model.to(device)
-print("Model loaded.")
+print("TTS Model loaded.")
+
+# Load Whisper STT model
+print("Loading Whisper STT model...")
+# "tiny" or "base" are good for CPU. "small" might be slow.
+stt_model = WhisperModel("base", device="cpu", compute_type="int8")
+print("STT Model loaded.")
 
 class TTSRequest(BaseModel):
     text: str
@@ -50,6 +59,30 @@ async def generate_audio(req: TTSRequest):
         
     except Exception as e:
         print(f"Error generating audio: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    try:
+        # Save uploaded file to temp file because Whisper needs a file path
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        segments, info = stt_model.transcribe(tmp_path, beam_size=5)
+        
+        text = ""
+        for segment in segments:
+            text += segment.text + " "
+            
+        # Cleanup
+        os.remove(tmp_path)
+        
+        return {"text": text.strip(), "language": info.language}
+
+    except Exception as e:
+        print(f"Error transcribing audio: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
