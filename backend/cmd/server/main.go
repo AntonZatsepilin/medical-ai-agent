@@ -55,6 +55,8 @@ func main() {
 
 	// Use local Silero TTS
 	ttsClient := agent.NewSileroClient()
+	// Use local Whisper STT
+	sttClient := agent.NewWhisperClient()
 
 	tgToken := os.Getenv("TELEGRAM_BOT_TOKEN")
 	tgClient := telegram.NewClient(tgToken)
@@ -86,7 +88,7 @@ func main() {
 	}
 
 	reportSvc := report.NewService(tgClient, doctorChatID)
-	consultationSvc := consultation.NewService(repo, aiClient, ttsClient, reportSvc)
+	consultationSvc := consultation.NewService(repo, aiClient, ttsClient, sttClient, reportSvc)
 	consultationHandler := consultation.NewHandler(consultationSvc)
 
 	// 4. Router

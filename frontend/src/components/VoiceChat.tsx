@@ -13,6 +13,8 @@ const VoiceChat: React.FC = () => {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   
   const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
   const consultationIdRef = useRef<string | null>(null);
   const isProcessingRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -30,37 +32,9 @@ const VoiceChat: React.FC = () => {
     window.speechSynthesis.onvoiceschanged = loadVoices;
     loadVoices();
 
-    // Initialize Web Speech API
-    const { webkitSpeechRecognition, SpeechRecognition } = window as unknown as IWindow;
-    const SpeechRecognitionConstructor = SpeechRecognition || webkitSpeechRecognition;
-
-    if (SpeechRecognitionConstructor) {
-      recognitionRef.current = new SpeechRecognitionConstructor();
-      recognitionRef.current.continuous = false;
-      recognitionRef.current.lang = 'ru-RU';
-      recognitionRef.current.interimResults = false;
-
-      recognitionRef.current.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        if (transcript.trim()) {
-            handleUserMessage(transcript);
-        }
-      };
-
-      recognitionRef.current.onend = () => {
-        if (!isProcessingRef.current && isHandsFree) {
-             setIsListening(false);
-        } else {
-            setIsListening(false);
-        }
-      };
-      
-      recognitionRef.current.onerror = (event: any) => {
-          if (event.error === 'aborted') return; // Ignore manual stop
-          console.error("Speech recognition error", event.error);
-          setIsListening(false);
-      };
-    }
+    // We are now using MediaRecorder for better quality, but we can keep SpeechRecognition as fallback?
+    // For now, let's switch to MediaRecorder completely for "listening".
+    
   }, []);
 
   const initAudioContext = () => {
@@ -84,48 +58,6 @@ const VoiceChat: React.FC = () => {
       consultationIdRef.current = data.consultation_id;
     } catch (error) {
       console.error("Failed to create consultation", error);
-    }
-  };
-
-  const handleUserMessage = async (text: string) => {
-    if (isProcessingRef.current) return;
-    isProcessingRef.current = true;
-    recognitionRef.current?.stop(); // Stop listening while processing
-    setIsListening(false);
-
-    setMessages((prev: {role: string, text: string}[]) => [...prev, { role: 'user', text }]);
-
-    if (!consultationIdRef.current) {
-        isProcessingRef.current = false;
-        return;
-    }
-
-    try {
-      const res = await fetch('/api/consultation/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            consultation_id: consultationIdRef.current, 
-            text: text 
-        }),
-      });
-      
-      const data = await res.json();
-      const aiResponse = data.response;
-
-      setMessages((prev: {role: string, text: string}[]) => [...prev, { role: 'assistant', text: aiResponse }]);
-      
-      // Speak response and THEN restart listening if hands-free
-      speakResponse(aiResponse, () => {
-        isProcessingRef.current = false;
-        if (isHandsFree) {
-            startListening();
-        }
-      });
-
-    } catch (error) {
-      console.error("Error sending message", error);
-      isProcessingRef.current = false;
     }
   };
 
@@ -196,20 +128,98 @@ const VoiceChat: React.FC = () => {
     }
   };
 
-  const startListening = () => {
+  const startListening = async () => {
       try {
-        recognitionRef.current?.start();
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        chunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+                chunksRef.current.push(e.data);
+            }
+        };
+
+        mediaRecorder.onstop = async () => {
+            const blob = new Blob(chunksRef.current, { type: 'audio/wav' });
+            if (blob.size > 0) {
+                await handleAudioUpload(blob);
+            }
+            // Stop all tracks
+            stream.getTracks().forEach(track => track.stop());
+        };
+
+        mediaRecorder.start();
         setIsListening(true);
       } catch (e) {
-          // Already started
+          console.error("Error accessing microphone:", e);
+          alert("Не удалось получить доступ к микрофону.");
       }
+  };
+
+  const stopListening = () => {
+      if (mediaRecorderRef.current && isListening) {
+          mediaRecorderRef.current.stop();
+          setIsListening(false);
+      }
+  };
+
+  const handleAudioUpload = async (audioBlob: Blob) => {
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+
+    if (!consultationIdRef.current) {
+        isProcessingRef.current = false;
+        return;
+    }
+
+    // Optimistic UI update (optional, maybe show "Processing...")
+    
+    const formData = new FormData();
+    formData.append('audio', audioBlob);
+    formData.append('consultation_id', consultationIdRef.current);
+
+    try {
+        const res = await fetch('/api/consultation/audio', {
+            method: 'POST',
+            body: formData,
+        });
+
+        const data = await res.json();
+        
+        if (data.text) {
+             setMessages((prev: {role: string, text: string}[]) => [...prev, { role: 'user', text: data.text }]);
+        }
+        
+        if (data.response) {
+            const aiResponse = data.response;
+            setMessages((prev: {role: string, text: string}[]) => [...prev, { role: 'assistant', text: aiResponse }]);
+            
+            speakResponse(aiResponse, () => {
+                isProcessingRef.current = false;
+                if (isHandsFree) {
+                    // Wait a bit before listening again to avoid picking up echo
+                    setTimeout(() => startListening(), 500);
+                }
+            });
+        } else {
+             isProcessingRef.current = false;
+             if (isHandsFree) {
+                 startListening();
+             }
+        }
+
+    } catch (error) {
+        console.error("Error uploading audio", error);
+        isProcessingRef.current = false;
+    }
   };
 
   const toggleRecording = () => {
     initAudioContext();
     if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
+      stopListening();
     } else {
       startListening();
     }
