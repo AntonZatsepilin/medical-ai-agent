@@ -1,18 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-// Types for Web Speech API (since they might not be in standard TS lib)
-interface IWindow extends Window {
-  webkitSpeechRecognition: any;
-  SpeechRecognition: any;
-}
-
 const VoiceChat: React.FC = () => {
   const [isListening, setIsListening] = useState(false);
   const [isHandsFree, setIsHandsFree] = useState(true); // Default to true as requested
   const [messages, setMessages] = useState<{role: string, text: string}[]>([]);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   
-  const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const consultationIdRef = useRef<string | null>(null);
