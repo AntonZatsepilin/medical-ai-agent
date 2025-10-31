@@ -11,6 +11,9 @@ const VoiceChat: React.FC = () => {
   const consultationIdRef = useRef<string | null>(null);
   const isProcessingRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const silenceTimerRef = useRef<any>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Initialize Consultation on mount
@@ -25,9 +28,10 @@ const VoiceChat: React.FC = () => {
     window.speechSynthesis.onvoiceschanged = loadVoices;
     loadVoices();
 
-    // We are now using MediaRecorder for better quality, but we can keep SpeechRecognition as fallback?
-    // For now, let's switch to MediaRecorder completely for "listening".
-    
+    return () => {
+        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    };
   }, []);
 
   const initAudioContext = () => {
@@ -124,6 +128,55 @@ const VoiceChat: React.FC = () => {
   const startListening = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // VAD Setup
+        const audioContext = new AudioContext();
+        const source = audioContext.createMediaStreamSource(stream);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        analyserRef.current = analyser;
+        
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        
+        let lastSpeechTime = Date.now();
+        let startTime = Date.now();
+        let hasSpoken = false;
+        
+        const checkSilence = () => {
+            if (mediaRecorderRef.current?.state !== 'recording') return;
+            
+            analyser.getByteFrequencyData(dataArray);
+            
+            // Calculate average volume
+            let sum = 0;
+            for(let i = 0; i < bufferLength; i++) {
+                sum += dataArray[i];
+            }
+            const average = sum / bufferLength;
+            
+            // Threshold for speech detection (adjustable)
+            if (average > 10) { 
+                lastSpeechTime = Date.now();
+                hasSpoken = true;
+            }
+            
+            // If silence for 1.5s AND we have detected speech previously
+            if (hasSpoken && (Date.now() - lastSpeechTime > 1500)) {
+                stopListening();
+                return; 
+            }
+            
+            // Safety timeout: stop after 15 seconds max
+            if (Date.now() - startTime > 15000) {
+                stopListening();
+                return;
+            }
+            
+            animationFrameRef.current = requestAnimationFrame(checkSilence);
+        };
+
         const mediaRecorder = new MediaRecorder(stream);
         mediaRecorderRef.current = mediaRecorder;
         chunksRef.current = [];
@@ -135,16 +188,21 @@ const VoiceChat: React.FC = () => {
         };
 
         mediaRecorder.onstop = async () => {
+            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+            
             const blob = new Blob(chunksRef.current, { type: 'audio/wav' });
             if (blob.size > 0) {
                 await handleAudioUpload(blob);
             }
             // Stop all tracks
             stream.getTracks().forEach(track => track.stop());
+            audioContext.close();
         };
 
         mediaRecorder.start();
         setIsListening(true);
+        checkSilence();
+        
       } catch (e) {
           console.error("Error accessing microphone:", e);
           alert("Не удалось получить доступ к микрофону.");
