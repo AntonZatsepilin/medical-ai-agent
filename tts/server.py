@@ -27,8 +27,8 @@ print("TTS Model loaded.")
 
 # Load Whisper STT model
 print("Loading Whisper STT model...")
-# "tiny" or "base" are good for CPU. "small" might be slow.
-stt_model = WhisperModel("base", device="cpu", compute_type="int8")
+# "tiny" is much faster on CPU and usually sufficient for clear speech
+stt_model = WhisperModel("tiny", device="cpu", compute_type="int8")
 print("STT Model loaded.")
 
 class TTSRequest(BaseModel):

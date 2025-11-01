@@ -162,8 +162,8 @@ const VoiceChat: React.FC = () => {
                 hasSpoken = true;
             }
             
-            // If silence for 1.5s AND we have detected speech previously
-            if (hasSpoken && (Date.now() - lastSpeechTime > 1500)) {
+            // If silence for 1.0s AND we have detected speech previously
+            if (hasSpoken && (Date.now() - lastSpeechTime > 1000)) {
                 stopListening();
                 return; 
             }
