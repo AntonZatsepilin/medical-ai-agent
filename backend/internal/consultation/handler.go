@@ -2,6 +2,7 @@ package consultation
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -154,9 +155,17 @@ func (h *Handler) HandleAudioUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 3. Generate TTS immediately to save roundtrip time
+	var audioBase64 string
+	audioData, err := h.svc.SynthesizeSpeech(r.Context(), response)
+	if err == nil {
+		audioBase64 = base64.StdEncoding.EncodeToString(audioData)
+	}
+
 	json.NewEncoder(w).Encode(map[string]string{
-		"response": response,
-		"text":     text, // Return recognized text for UI
+		"response":     response,
+		"text":         text,
+		"audio_base64": audioBase64,
 	})
 }
 

@@ -162,8 +162,8 @@ const VoiceChat: React.FC = () => {
                 hasSpoken = true;
             }
             
-            // If silence for 1.0s AND we have detected speech previously
-            if (hasSpoken && (Date.now() - lastSpeechTime > 1000)) {
+            // If silence for 0.6s AND we have detected speech previously
+            if (hasSpoken && (Date.now() - lastSpeechTime > 600)) {
                 stopListening();
                 return; 
             }
@@ -247,13 +247,18 @@ const VoiceChat: React.FC = () => {
             const aiResponse = data.response;
             setMessages((prev: {role: string, text: string}[]) => [...prev, { role: 'assistant', text: aiResponse }]);
             
-            speakResponse(aiResponse, () => {
+            const onPlaybackEnd = () => {
                 isProcessingRef.current = false;
                 if (isHandsFree) {
-                    // Wait a bit before listening again to avoid picking up echo
-                    setTimeout(() => startListening(), 500);
+                    setTimeout(() => startListening(), 200);
                 }
-            });
+            };
+
+            if (data.audio_base64) {
+                playBase64Audio(data.audio_base64, onPlaybackEnd);
+            } else {
+                speakResponse(aiResponse, onPlaybackEnd);
+            }
         } else {
              isProcessingRef.current = false;
              if (isHandsFree) {
@@ -265,6 +270,35 @@ const VoiceChat: React.FC = () => {
         console.error("Error uploading audio", error);
         isProcessingRef.current = false;
     }
+  };
+
+  const playBase64Audio = async (base64String: string, onEnd?: () => void) => {
+      try {
+        if (!audioContextRef.current) initAudioContext();
+        const ctx = audioContextRef.current!;
+        
+        // Convert base64 to array buffer
+        const binaryString = window.atob(base64String);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        const audioBuffer = await ctx.decodeAudioData(bytes.buffer);
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(ctx.destination);
+        
+        source.onended = () => {
+            if (onEnd) onEnd();
+        };
+        
+        source.start(0);
+      } catch (e) {
+          console.error("Error playing base64 audio", e);
+          if (onEnd) onEnd();
+      }
   };
 
   const toggleRecording = () => {
