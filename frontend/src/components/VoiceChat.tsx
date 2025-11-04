@@ -127,10 +127,12 @@ const VoiceChat: React.FC = () => {
 
   const startListening = async () => {
       try {
+        initAudioContext();
+        const audioContext = audioContextRef.current!;
+        
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         
         // VAD Setup
-        const audioContext = new AudioContext();
         const source = audioContext.createMediaStreamSource(stream);
         const analyser = audioContext.createAnalyser();
         analyser.fftSize = 256;
@@ -156,14 +158,14 @@ const VoiceChat: React.FC = () => {
             }
             const average = sum / bufferLength;
             
-            // Threshold for speech detection (adjustable)
-            if (average > 10) { 
+            // Threshold for speech detection (increased to avoid background noise)
+            if (average > 20) { 
                 lastSpeechTime = Date.now();
                 hasSpoken = true;
             }
             
-            // If silence for 0.6s AND we have detected speech previously
-            if (hasSpoken && (Date.now() - lastSpeechTime > 600)) {
+            // If silence for 0.8s AND we have detected speech previously
+            if (hasSpoken && (Date.now() - lastSpeechTime > 800)) {
                 stopListening();
                 return; 
             }
@@ -190,13 +192,16 @@ const VoiceChat: React.FC = () => {
         mediaRecorder.onstop = async () => {
             if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
             
+            // Clean up VAD
+            source.disconnect();
+            analyser.disconnect();
+            
             const blob = new Blob(chunksRef.current, { type: 'audio/wav' });
             if (blob.size > 0) {
                 await handleAudioUpload(blob);
             }
             // Stop all tracks
             stream.getTracks().forEach(track => track.stop());
-            audioContext.close();
         };
 
         mediaRecorder.start();
@@ -206,6 +211,7 @@ const VoiceChat: React.FC = () => {
       } catch (e) {
           console.error("Error accessing microphone:", e);
           alert("Не удалось получить доступ к микрофону.");
+          setIsListening(false);
       }
   };
 
@@ -269,6 +275,10 @@ const VoiceChat: React.FC = () => {
     } catch (error) {
         console.error("Error uploading audio", error);
         isProcessingRef.current = false;
+        // Restart loop if hands-free
+        if (isHandsFree) {
+             setTimeout(() => startListening(), 1000);
+        }
     }
   };
 
