@@ -135,7 +135,7 @@ const VoiceChat: React.FC = () => {
         // VAD Setup
         const source = audioContext.createMediaStreamSource(stream);
         const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
+        analyser.fftSize = 512;
         source.connect(analyser);
         analyserRef.current = analyser;
         
@@ -149,29 +149,38 @@ const VoiceChat: React.FC = () => {
         const checkSilence = () => {
             if (mediaRecorderRef.current?.state !== 'recording') return;
             
-            analyser.getByteFrequencyData(dataArray);
+            // Use TimeDomainData for better volume detection (RMS)
+            analyser.getByteTimeDomainData(dataArray);
             
-            // Calculate average volume
             let sum = 0;
             for(let i = 0; i < bufferLength; i++) {
-                sum += dataArray[i];
+                const x = dataArray[i] - 128;
+                sum += x * x;
             }
-            const average = sum / bufferLength;
+            const rms = Math.sqrt(sum / bufferLength);
             
-            // Threshold for speech detection (increased to avoid background noise)
-            if (average > 20) { 
+            // Thresholds
+            const SPEECH_THRESHOLD = 8; // Sensitivity
+            const SILENCE_DURATION = 1000; // Wait 1s of silence
+            
+            if (rms > SPEECH_THRESHOLD) { 
                 lastSpeechTime = Date.now();
-                hasSpoken = true;
+                if (!hasSpoken) {
+                    console.log("Speech detected! Volume:", rms.toFixed(1));
+                    hasSpoken = true;
+                }
             }
             
-            // If silence for 0.8s AND we have detected speech previously
-            if (hasSpoken && (Date.now() - lastSpeechTime > 800)) {
+            // If silence detected AFTER speech started
+            if (hasSpoken && (Date.now() - lastSpeechTime > SILENCE_DURATION)) {
+                console.log("Silence detected, stopping...");
                 stopListening();
                 return; 
             }
             
-            // Safety timeout: stop after 15 seconds max
-            if (Date.now() - startTime > 15000) {
+            // Safety timeout: stop after 10 seconds max
+            if (Date.now() - startTime > 10000) {
+                console.log("Max duration reached, stopping...");
                 stopListening();
                 return;
             }
@@ -198,7 +207,14 @@ const VoiceChat: React.FC = () => {
             
             const blob = new Blob(chunksRef.current, { type: 'audio/wav' });
             if (blob.size > 0) {
-                await handleAudioUpload(blob);
+                // Only upload if we actually detected speech or the file is big enough
+                if (hasSpoken || blob.size > 5000) {
+                    await handleAudioUpload(blob);
+                } else {
+                    console.log("Audio too short or empty, ignoring.");
+                    setIsListening(false);
+                    if (isHandsFree) startListening(); // Restart if it was just noise
+                }
             }
             // Stop all tracks
             stream.getTracks().forEach(track => track.stop());
