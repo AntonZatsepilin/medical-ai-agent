@@ -15,6 +15,10 @@ const VoiceChat: React.FC = () => {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
+  const [isSpeaking, setIsSpeaking] = useState(false); // Visual feedback for VAD
+  const [debugInfo, setDebugInfo] = useState<string>(""); // Debug info for VAD
+
+
   useEffect(() => {
     // Initialize Consultation on mount
     createConsultation();
@@ -136,6 +140,8 @@ const VoiceChat: React.FC = () => {
         const source = audioContext.createMediaStreamSource(stream);
         const analyser = audioContext.createAnalyser();
         analyser.fftSize = 512;
+        analyser.minDecibels = -70; // Cut off background noise
+        analyser.smoothingTimeConstant = 0.85; 
         source.connect(analyser);
         analyserRef.current = analyser;
         
@@ -149,37 +155,51 @@ const VoiceChat: React.FC = () => {
         const checkSilence = () => {
             if (mediaRecorderRef.current?.state !== 'recording') return;
             
-            // Use TimeDomainData for better volume detection (RMS)
-            analyser.getByteTimeDomainData(dataArray);
+            analyser.getByteFrequencyData(dataArray);
+            
+            // Calculate average volume for speech frequencies (approx 300Hz - 3400Hz)
+            // Bin width ~93Hz (48000/512)
+            const startBin = 3; // ~280Hz
+            const endBin = 40;  // ~3700Hz
             
             let sum = 0;
-            for(let i = 0; i < bufferLength; i++) {
-                const x = dataArray[i] - 128;
-                sum += x * x;
+            for(let i = startBin; i < endBin; i++) {
+                sum += dataArray[i];
             }
-            const rms = Math.sqrt(sum / bufferLength);
+            const average = sum / (endBin - startBin);
             
-            // Thresholds
-            const SPEECH_THRESHOLD = 8; // Sensitivity
-            const SILENCE_DURATION = 1000; // Wait 1s of silence
+            // Threshold for speech detection
+            // Frequency data is 0-255. 
+            // Background noise is usually < 10-15 in these bands.
+            // Speech is usually > 30-40.
+            const SPEECH_THRESHOLD = 10; 
             
-            if (rms > SPEECH_THRESHOLD) { 
+            if (Date.now() % 100 < 20) { // Update roughly every 100ms
+                 setDebugInfo(`Vol: ${average.toFixed(0)} / ${SPEECH_THRESHOLD} | State: ${hasSpoken ? 'Speaking' : 'Listening'}`);
+            }
+
+            if (average > SPEECH_THRESHOLD) { 
                 lastSpeechTime = Date.now();
                 if (!hasSpoken) {
-                    console.log("Speech detected! Volume:", rms.toFixed(1));
+                    console.log("Speech detected! Level:", average.toFixed(1));
                     hasSpoken = true;
+                    setIsSpeaking(true);
+                }
+            } else {
+                if (Date.now() - lastSpeechTime > 200) {
+                    setIsSpeaking(false);
                 }
             }
             
-            // If silence detected AFTER speech started
-            if (hasSpoken && (Date.now() - lastSpeechTime > SILENCE_DURATION)) {
+            // If silence for 1.2s AND we have detected speech previously
+            if (hasSpoken && (Date.now() - lastSpeechTime > 1200)) {
                 console.log("Silence detected, stopping...");
                 stopListening();
                 return; 
             }
             
-            // Safety timeout: stop after 10 seconds max
-            if (Date.now() - startTime > 10000) {
+            // Safety timeout: stop after 15 seconds max
+            if (Date.now() - startTime > 15000) {
                 console.log("Max duration reached, stopping...");
                 stopListening();
                 return;
@@ -200,6 +220,7 @@ const VoiceChat: React.FC = () => {
 
         mediaRecorder.onstop = async () => {
             if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+            setIsSpeaking(false);
             
             // Clean up VAD
             source.disconnect();
@@ -208,12 +229,15 @@ const VoiceChat: React.FC = () => {
             const blob = new Blob(chunksRef.current, { type: 'audio/wav' });
             if (blob.size > 0) {
                 // Only upload if we actually detected speech or the file is big enough
-                if (hasSpoken || blob.size > 5000) {
+                if (hasSpoken || blob.size > 10000) {
                     await handleAudioUpload(blob);
                 } else {
                     console.log("Audio too short or empty, ignoring.");
                     setIsListening(false);
-                    if (isHandsFree) startListening(); // Restart if it was just noise
+                    if (isHandsFree) {
+                        // Small delay before restarting to avoid loops
+                        setTimeout(() => startListening(), 500);
+                    }
                 }
             }
             // Stop all tracks
@@ -397,8 +421,8 @@ const VoiceChat: React.FC = () => {
           >
             {isListening ? (
               <>
-                <span className="h-3 w-3 bg-white rounded-full animate-ping"></span>
-                Слушаю вас...
+                <span className={`h-3 w-3 rounded-full animate-ping ${isSpeaking ? 'bg-green-400' : 'bg-white'}`}></span>
+                {isSpeaking ? 'Голос обнаружен...' : 'Слушаю вас...'}
               </>
             ) : (
               <>
@@ -414,6 +438,11 @@ const VoiceChat: React.FC = () => {
                 ? "Режим Hands-Free включен. Ассистент будет слушать вас автоматически после своего ответа." 
                 : "Нажмите кнопку, чтобы записать ответ."}
           </p>
+          {isListening && (
+              <p className="text-center text-xs text-gray-300 mt-1 font-mono">
+                  {debugInfo}
+              </p>
+          )}
         </div>
       </div>
     </div>
