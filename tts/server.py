@@ -27,8 +27,8 @@ print("TTS Model loaded.")
 
 # Load Whisper STT model
 print("Loading Whisper STT model...")
-# "tiny" is much faster on CPU and usually sufficient for clear speech
-stt_model = WhisperModel("tiny", device="cpu", compute_type="int8")
+# "medium" offers high accuracy for Russian, suitable for demos where quality is key
+stt_model = WhisperModel("medium", device="cpu", compute_type="int8")
 print("STT Model loaded.")
 
 class TTSRequest(BaseModel):
@@ -70,7 +70,7 @@ async def transcribe_audio(file: UploadFile = File(...)):
             tmp.write(content)
             tmp_path = tmp.name
 
-        segments, info = stt_model.transcribe(tmp_path, beam_size=5)
+        segments, info = stt_model.transcribe(tmp_path, beam_size=5, language="ru")
         
         text = ""
         for segment in segments:

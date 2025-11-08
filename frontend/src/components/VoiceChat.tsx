@@ -16,7 +16,6 @@ const VoiceChat: React.FC = () => {
   const animationFrameRef = useRef<number | null>(null);
 
   const [isSpeaking, setIsSpeaking] = useState(false); // Visual feedback for VAD
-  const [debugInfo, setDebugInfo] = useState<string>(""); // Debug info for VAD
 
 
   useEffect(() => {
@@ -172,12 +171,9 @@ const VoiceChat: React.FC = () => {
             // Frequency data is 0-255. 
             // Background noise is usually < 10-15 in these bands.
             // Speech is usually > 30-40.
-            const SPEECH_THRESHOLD = 10; 
+            // Lowered to 12 for higher sensitivity
+            const SPEECH_THRESHOLD = 12; 
             
-            if (Date.now() % 100 < 20) { // Update roughly every 100ms
-                 setDebugInfo(`Vol: ${average.toFixed(0)} / ${SPEECH_THRESHOLD} | State: ${hasSpoken ? 'Speaking' : 'Listening'}`);
-            }
-
             if (average > SPEECH_THRESHOLD) { 
                 lastSpeechTime = Date.now();
                 if (!hasSpoken) {
@@ -186,13 +182,13 @@ const VoiceChat: React.FC = () => {
                     setIsSpeaking(true);
                 }
             } else {
-                if (Date.now() - lastSpeechTime > 200) {
+                if (Date.now() - lastSpeechTime > 500) {
                     setIsSpeaking(false);
                 }
             }
             
-            // If silence for 1.2s AND we have detected speech previously
-            if (hasSpoken && (Date.now() - lastSpeechTime > 1200)) {
+            // If silence for 1.0s AND we have detected speech previously
+            if (hasSpoken && (Date.now() - lastSpeechTime > 1000)) {
                 console.log("Silence detected, stopping...");
                 stopListening();
                 return; 
@@ -256,7 +252,7 @@ const VoiceChat: React.FC = () => {
   };
 
   const stopListening = () => {
-      if (mediaRecorderRef.current && isListening) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
           mediaRecorderRef.current.stop();
           setIsListening(false);
       }
@@ -438,11 +434,6 @@ const VoiceChat: React.FC = () => {
                 ? "Режим Hands-Free включен. Ассистент будет слушать вас автоматически после своего ответа." 
                 : "Нажмите кнопку, чтобы записать ответ."}
           </p>
-          {isListening && (
-              <p className="text-center text-xs text-gray-300 mt-1 font-mono">
-                  {debugInfo}
-              </p>
-          )}
         </div>
       </div>
     </div>
