@@ -139,7 +139,7 @@ const VoiceChat: React.FC = () => {
         const source = audioContext.createMediaStreamSource(stream);
         const analyser = audioContext.createAnalyser();
         analyser.fftSize = 512;
-        analyser.minDecibels = -70; // Cut off background noise
+        analyser.minDecibels = -80; // Increased sensitivity range (was -70)
         analyser.smoothingTimeConstant = 0.85; 
         source.connect(analyser);
         analyserRef.current = analyser;
@@ -171,8 +171,8 @@ const VoiceChat: React.FC = () => {
             // Frequency data is 0-255. 
             // Background noise is usually < 10-15 in these bands.
             // Speech is usually > 30-40.
-            // Lowered to 12 for higher sensitivity
-            const SPEECH_THRESHOLD = 12; 
+            // Lowered to 7 for maximum sensitivity (whisper level)
+            const SPEECH_THRESHOLD = 7; 
             
             if (average > SPEECH_THRESHOLD) { 
                 lastSpeechTime = Date.now();
@@ -187,8 +187,8 @@ const VoiceChat: React.FC = () => {
                 }
             }
             
-            // If silence for 1.0s AND we have detected speech previously
-            if (hasSpoken && (Date.now() - lastSpeechTime > 1000)) {
+            // If silence for 1.5s AND we have detected speech previously
+            if (hasSpoken && (Date.now() - lastSpeechTime > 1500)) {
                 console.log("Silence detected, stopping...");
                 stopListening();
                 return; 
