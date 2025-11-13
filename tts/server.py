@@ -34,7 +34,7 @@ print("STT Model loaded.")
 class TTSRequest(BaseModel):
     text: str
     speaker: str = "kseniya" # Options: aidar, baya, kseniya, xenia, eugene
-    sample_rate: int = 48000
+    sample_rate: int = 24000
 
 @app.post("/generate")
 async def generate_audio(req: TTSRequest):
@@ -52,7 +52,9 @@ async def generate_audio(req: TTSRequest):
         audio_np = audio.numpy()
         
         buffer = io.BytesIO()
-        sf.write(buffer, audio_np, req.sample_rate, format='WAV')
+        # Use PCM_16 to reduce file size (2 bytes per sample instead of 4 for float32)
+        # This helps with network latency and "glitching"
+        sf.write(buffer, audio_np, req.sample_rate, format='WAV', subtype='PCM_16')
         buffer.seek(0)
         
         return Response(content=buffer.read(), media_type="audio/wav")

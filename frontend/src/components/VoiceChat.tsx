@@ -171,8 +171,8 @@ const VoiceChat: React.FC = () => {
             // Frequency data is 0-255. 
             // Background noise is usually < 10-15 in these bands.
             // Speech is usually > 30-40.
-            // Lowered to 7 for maximum sensitivity (whisper level)
-            const SPEECH_THRESHOLD = 2; 
+            // Lowered to 4 for extreme sensitivity as requested
+            const SPEECH_THRESHOLD = 3; 
             
             if (average > SPEECH_THRESHOLD) { 
                 lastSpeechTime = Date.now();
