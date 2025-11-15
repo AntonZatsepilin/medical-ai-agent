@@ -15,6 +15,8 @@ const VoiceChat: React.FC = () => {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
+  const isManualStop = useRef(false);
+
   const [isSpeaking, setIsSpeaking] = useState(false); // Visual feedback for VAD
 
 
@@ -171,8 +173,8 @@ const VoiceChat: React.FC = () => {
             // Frequency data is 0-255. 
             // Background noise is usually < 10-15 in these bands.
             // Speech is usually > 30-40.
-            // Lowered to 4 for extreme sensitivity as requested
-            const SPEECH_THRESHOLD = 3; 
+            // Lowered to 2 for extreme sensitivity as requested
+            const SPEECH_THRESHOLD = 2; 
             
             if (average > SPEECH_THRESHOLD) { 
                 lastSpeechTime = Date.now();
@@ -230,7 +232,7 @@ const VoiceChat: React.FC = () => {
                 } else {
                     console.log("Audio too short or empty, ignoring.");
                     setIsListening(false);
-                    if (isHandsFree) {
+                    if (isHandsFree && !isManualStop.current) {
                         // Small delay before restarting to avoid loops
                         setTimeout(() => startListening(), 500);
                     }
@@ -238,6 +240,9 @@ const VoiceChat: React.FC = () => {
             }
             // Stop all tracks
             stream.getTracks().forEach(track => track.stop());
+            
+            // Reset manual stop flag
+            isManualStop.current = false;
         };
 
         mediaRecorder.start();
@@ -350,8 +355,10 @@ const VoiceChat: React.FC = () => {
   const toggleRecording = () => {
     initAudioContext();
     if (isListening) {
+      isManualStop.current = true;
       stopListening();
     } else {
+      isManualStop.current = false;
       startListening();
     }
   };
