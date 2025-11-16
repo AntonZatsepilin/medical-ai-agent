@@ -3,6 +3,7 @@ package consultation
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -101,6 +102,18 @@ func (s *service) ProcessUserAudio(ctx context.Context, consultationID uuid.UUID
 		return "", fmt.Errorf("communicator failed: %w", err)
 	}
 
+	// Check for completion phrases to force finish the consultation
+	// This ensures that if the AI says "Doctor is coming", we definitely send the report.
+	forceComplete := false
+	lowerResp := strings.ToLower(response)
+	if strings.Contains(lowerResp, "врач скоро подойдет") || 
+	   strings.Contains(lowerResp, "до свидания") || 
+	   strings.Contains(lowerResp, "всего доброго") ||
+	   strings.Contains(lowerResp, "ждите врача") {
+		forceComplete = true
+		fmt.Println("Detected completion phrase in assistant response. Forcing completion.")
+	}
+	
 	// Update Episodic Memory (AI Response) & Emotional State
 	consultation.History = append(consultation.History, Message{
 		Role: "assistant", Content: response, Timestamp: time.Now(),
@@ -126,7 +139,16 @@ func (s *service) ProcessUserAudio(ctx context.Context, consultationID uuid.UUID
 		// Supervisor: Check if we are done
 		// Only run supervisor if the consultation is not already marked as complete
 		if !c.IsComplete {
-			isComplete, err := s.aiClient.RunSupervisor(bgCtx, c.History, c.ExtractedFacts)
+			isComplete := false
+			var err error
+
+			if forceComplete {
+				isComplete = true
+				fmt.Println("Forcing completion based on assistant response.")
+			} else {
+				isComplete, err = s.aiClient.RunSupervisor(bgCtx, c.History, c.ExtractedFacts)
+			}
+
 			if err != nil {
 				fmt.Printf("Supervisor error: %v\n", err)
 			}

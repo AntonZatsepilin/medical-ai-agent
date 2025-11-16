@@ -16,6 +16,11 @@ const VoiceChat: React.FC = () => {
   const animationFrameRef = useRef<number | null>(null);
 
   const isManualStop = useRef(false);
+  const isHandsFreeRef = useRef(isHandsFree);
+
+  useEffect(() => {
+    isHandsFreeRef.current = isHandsFree;
+  }, [isHandsFree]);
 
   const [isSpeaking, setIsSpeaking] = useState(false); // Visual feedback for VAD
 
@@ -174,7 +179,7 @@ const VoiceChat: React.FC = () => {
             // Background noise is usually < 10-15 in these bands.
             // Speech is usually > 30-40.
             // Lowered to 2 for extreme sensitivity as requested
-            const SPEECH_THRESHOLD = 2; 
+            const SPEECH_THRESHOLD = 1; 
             
             if (average > SPEECH_THRESHOLD) { 
                 lastSpeechTime = Date.now();
@@ -232,8 +237,8 @@ const VoiceChat: React.FC = () => {
                 } else {
                     console.log("Audio too short or empty, ignoring.");
                     setIsListening(false);
+                    // Check isManualStop.current BEFORE restarting
                     if (isHandsFree && !isManualStop.current) {
-                        // Small delay before restarting to avoid loops
                         setTimeout(() => startListening(), 500);
                     }
                 }
@@ -241,8 +246,8 @@ const VoiceChat: React.FC = () => {
             // Stop all tracks
             stream.getTracks().forEach(track => track.stop());
             
-            // Reset manual stop flag
-            isManualStop.current = false;
+            // IMPORTANT: Do NOT reset isManualStop.current here. 
+            // It should only be reset when the user explicitly clicks "Start".
         };
 
         mediaRecorder.start();
@@ -296,7 +301,8 @@ const VoiceChat: React.FC = () => {
             
             const onPlaybackEnd = () => {
                 isProcessingRef.current = false;
-                if (isHandsFree) {
+                // Only restart if Hands-Free is ON AND user hasn't manually stopped it
+                if (isHandsFree && !isManualStop.current) {
                     setTimeout(() => startListening(), 200);
                 }
             };
@@ -308,7 +314,7 @@ const VoiceChat: React.FC = () => {
             }
         } else {
              isProcessingRef.current = false;
-             if (isHandsFree) {
+             if (isHandsFree && !isManualStop.current) {
                  startListening();
              }
         }
@@ -317,7 +323,7 @@ const VoiceChat: React.FC = () => {
         console.error("Error uploading audio", error);
         isProcessingRef.current = false;
         // Restart loop if hands-free
-        if (isHandsFree) {
+        if (isHandsFree && !isManualStop.current) {
              setTimeout(() => startListening(), 1000);
         }
     }

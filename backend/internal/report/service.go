@@ -34,12 +34,28 @@ func (s *Service) SendDoctorReport(ctx context.Context, c consultation.Consultat
 	pdf.AddPage()
 
 	// Load Font (DejaVuSans supports Cyrillic)
-	// Path inside Docker container (alpine with ttf-dejavu installed)
-	fontPath := "/usr/share/fonts/ttf-dejavu/DejaVuSans.ttf"
-	err := pdf.AddTTFFont("DejaVu", fontPath)
-	if err != nil {
-		fmt.Printf("Error loading font: %v\n", err)
-		return fmt.Errorf("failed to load font for PDF (path: %s): %w", fontPath, err)
+	// Try multiple common paths for Alpine Linux
+	fontPaths := []string{
+		"/usr/share/fonts/ttf-dejavu/DejaVuSans.ttf",
+		"/usr/share/fonts/dejavu/DejaVuSans.ttf",
+		"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+	}
+
+	var fontErr error
+	fontLoaded := false
+	for _, path := range fontPaths {
+		if err := pdf.AddTTFFont("DejaVu", path); err == nil {
+			fmt.Printf("Successfully loaded font from: %s\n", path)
+			fontLoaded = true
+			break
+		} else {
+			fontErr = err
+		}
+	}
+
+	if !fontLoaded {
+		fmt.Printf("Error loading font from all paths. Last error: %v\n", fontErr)
+		return fmt.Errorf("failed to load font for PDF. Please ensure ttf-dejavu is installed. Last error: %w", fontErr)
 	}
 
 	if err := pdf.SetFont("DejaVu", "", 20); err != nil {
@@ -107,8 +123,7 @@ func (s *Service) SendDoctorReport(ctx context.Context, c consultation.Consultat
 
 	fileName := fmt.Sprintf("report_%s.pdf", c.ID.String())
 	fmt.Printf("Sending PDF document to Telegram chat %d...\n", s.doctorChatID)
-	err = s.tgClient.SendDocument(s.doctorChatID, buf.Bytes(), fileName)
-	if err != nil {
+	if err := s.tgClient.SendDocument(s.doctorChatID, buf.Bytes(), fileName); err != nil {
 		fmt.Printf("Error sending Telegram document: %v\n", err)
 		return err
 	}
