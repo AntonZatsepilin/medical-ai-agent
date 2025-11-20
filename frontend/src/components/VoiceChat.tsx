@@ -19,6 +19,7 @@ const VoiceChat: React.FC = () => {
   const audioQueueRef = useRef<string[]>([]);
   const isPlayingRef = useRef(false);
   const isStreamDoneRef = useRef(false);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     isHandsFreeRef.current = isHandsFree;
@@ -66,16 +67,24 @@ const VoiceChat: React.FC = () => {
         initAudioContext();
         const audioContext = audioContextRef.current!;
         
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        let stream = streamRef.current;
+        if (!stream || !stream.active) {
+             stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+             streamRef.current = stream;
+        }
         
         // VAD Setup
-        const source = audioContext.createMediaStreamSource(stream);
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 512;
-        analyser.minDecibels = -80; // Increased sensitivity range (was -70)
-        analyser.smoothingTimeConstant = 0.85; 
-        source.connect(analyser);
-        analyserRef.current = analyser;
+        // Reuse analyser if possible, or create new one
+        let analyser = analyserRef.current;
+        if (!analyser) {
+            const source = audioContext.createMediaStreamSource(stream);
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 512;
+            analyser.minDecibels = -80; 
+            analyser.smoothingTimeConstant = 0.85; 
+            source.connect(analyser);
+            analyserRef.current = analyser;
+        }
         
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
@@ -87,7 +96,7 @@ const VoiceChat: React.FC = () => {
         const checkSilence = () => {
             if (mediaRecorderRef.current?.state !== 'recording') return;
             
-            analyser.getByteFrequencyData(dataArray);
+            analyser!.getByteFrequencyData(dataArray);
             
             // Calculate average volume for speech frequencies (approx 300Hz - 3400Hz)
             // Bin width ~93Hz (48000/512)
@@ -151,9 +160,9 @@ const VoiceChat: React.FC = () => {
             if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
             setIsSpeaking(false);
             
-            // Clean up VAD
-            source.disconnect();
-            analyser.disconnect();
+            // Do NOT disconnect source/analyser here if we want to reuse them
+            // source.disconnect();
+            // analyser.disconnect();
             
             const blob = new Blob(chunksRef.current, { type: 'audio/wav' });
             if (blob.size > 0) {
@@ -165,12 +174,17 @@ const VoiceChat: React.FC = () => {
                     setIsListening(false);
                     // Check isManualStop.current BEFORE restarting
                     if (isHandsFree && !isManualStop.current) {
-                        setTimeout(() => startListening(), 500);
+                        setTimeout(() => startListening(), 50); // Reduced delay
                     }
                 }
             }
-            // Stop all tracks
-            stream.getTracks().forEach(track => track.stop());
+            
+            // Only stop tracks if we are manually stopping or leaving the page
+            if (isManualStop.current) {
+                 stream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
+                 streamRef.current = null;
+                 analyserRef.current = null;
+            }
             
             // IMPORTANT: Do NOT reset isManualStop.current here. 
             // It should only be reset when the user explicitly clicks "Start".
