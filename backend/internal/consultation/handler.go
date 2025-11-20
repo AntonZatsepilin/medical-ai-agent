@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -169,9 +170,84 @@ func (h *Handler) HandleAudioUpload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) HandleAudioUploadStream(w http.ResponseWriter, r *http.Request) {
+	// Limit upload size (e.g. 10MB)
+	r.ParseMultipartForm(10 << 20)
+
+	consultationIDStr := r.FormValue("consultation_id")
+	if consultationIDStr == "" {
+		http.Error(w, "Missing consultation_id", http.StatusBadRequest)
+		return
+	}
+
+	id, err := uuid.Parse(consultationIDStr)
+	if err != nil {
+		http.Error(w, "Invalid consultation ID", http.StatusBadRequest)
+		return
+	}
+
+	file, _, err := r.FormFile("audio")
+	if err != nil {
+		http.Error(w, "Error retrieving audio file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, file); err != nil {
+		http.Error(w, "Failed to read audio file", http.StatusInternalServerError)
+		return
+	}
+
+	// 1. Transcribe (Blocking)
+	text, err := h.svc.TranscribeAudio(r.Context(), buf.Bytes())
+	if err != nil {
+		http.Error(w, "Transcription failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// Send initial event with transcribed text
+	initData, _ := json.Marshal(StreamEvent{Type: "user_text", Data: text})
+	fmt.Fprintf(w, "data: %s\n\n", initData)
+	flusher.Flush()
+
+	if text == "" {
+		return
+	}
+
+	eventChan := make(chan StreamEvent)
+
+	go func() {
+		defer close(eventChan)
+		err := h.svc.ProcessUserAudioStream(r.Context(), id, text, eventChan)
+		if err != nil {
+			eventChan <- StreamEvent{Type: "error", Data: err.Error()}
+		}
+	}()
+
+	for event := range eventChan {
+		data, _ := json.Marshal(event)
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	}
+}
+
 func RegisterRoutes(r chi.Router, h *Handler) {
 	r.Post("/consultation", h.CreateConsultation)
 	r.Post("/consultation/chat", h.HandleVoiceInput)
 	r.Post("/consultation/audio", h.HandleAudioUpload)
+	r.Post("/consultation/audio/stream", h.HandleAudioUploadStream)
 	r.Post("/tts", h.HandleTTS)
 }

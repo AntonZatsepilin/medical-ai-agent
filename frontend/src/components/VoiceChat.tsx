@@ -4,7 +4,6 @@ const VoiceChat: React.FC = () => {
   const [isListening, setIsListening] = useState(false);
   const [isHandsFree, setIsHandsFree] = useState(true); // Default to true as requested
   const [messages, setMessages] = useState<{role: string, text: string}[]>([]);
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -17,6 +16,9 @@ const VoiceChat: React.FC = () => {
 
   const isManualStop = useRef(false);
   const isHandsFreeRef = useRef(isHandsFree);
+  const audioQueueRef = useRef<string[]>([]);
+  const isPlayingRef = useRef(false);
+  const isStreamDoneRef = useRef(false);
 
   useEffect(() => {
     isHandsFreeRef.current = isHandsFree;
@@ -28,15 +30,6 @@ const VoiceChat: React.FC = () => {
   useEffect(() => {
     // Initialize Consultation on mount
     createConsultation();
-
-    // Load Voices
-    const loadVoices = () => {
-      const availableVoices = window.speechSynthesis.getVoices();
-      setVoices(availableVoices.filter(v => v.lang.includes('ru')));
-    };
-    
-    window.speechSynthesis.onvoiceschanged = loadVoices;
-    loadVoices();
 
     return () => {
         if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
@@ -65,73 +58,6 @@ const VoiceChat: React.FC = () => {
       consultationIdRef.current = data.consultation_id;
     } catch (error) {
       console.error("Failed to create consultation", error);
-    }
-  };
-
-  const speakResponse = async (text: string, onEnd?: () => void) => {
-    // Try ElevenLabs TTS via Backend
-    try {
-        console.log("Requesting TTS from backend...");
-        const res = await fetch('/api/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text }),
-        });
-
-        if (!res.ok) {
-            throw new Error(`TTS API failed with status ${res.status}`);
-        }
-
-        const blob = await res.blob();
-        console.log("TTS Blob received, size:", blob.size);
-        
-        if (blob.size < 1000) {
-             throw new Error("TTS Blob too small, likely error");
-        }
-
-        // Use Web Audio API for playback to avoid Autoplay Policy issues
-        if (!audioContextRef.current) {
-             initAudioContext();
-        }
-        
-        const ctx = audioContextRef.current!;
-        const arrayBuffer = await blob.arrayBuffer();
-        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-        
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(ctx.destination);
-        
-        source.onended = () => {
-            if (onEnd) onEnd();
-        };
-        
-        source.start(0);
-        console.log("Audio playback started via Web Audio API");
-        return;
-
-    } catch (e) {
-        console.warn("Falling back to browser TTS due to error:", e);
-        // Fallback to Browser TTS
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'ru-RU';
-        
-        const preferredVoice = voices.find((v: SpeechSynthesisVoice) => v.name.includes('Google') && v.lang.includes('ru')) 
-                            || voices.find((v: SpeechSynthesisVoice) => v.lang.includes('ru'));
-        
-        if (preferredVoice) {
-            utterance.voice = preferredVoice;
-        }
-
-        utterance.pitch = 1.0;
-        utterance.rate = 1.1;
-
-        utterance.onend = () => {
-            if (onEnd) onEnd();
-        };
-
-        window.speechSynthesis.speak(utterance);
     }
   };
 
@@ -268,62 +194,114 @@ const VoiceChat: React.FC = () => {
       }
   };
 
+  const playNextAudioChunk = async () => {
+      if (audioQueueRef.current.length === 0) {
+          isPlayingRef.current = false;
+          if (isStreamDoneRef.current) {
+               isProcessingRef.current = false;
+               if (isHandsFreeRef.current && !isManualStop.current) {
+                   setTimeout(() => startListening(), 200);
+               }
+          }
+          return;
+      }
+      
+      isPlayingRef.current = true;
+      const base64 = audioQueueRef.current.shift();
+      if (base64) {
+          await playBase64Audio(base64, () => {
+              playNextAudioChunk();
+          });
+      }
+  };
+
+  const handleStreamEvent = (event: any) => {
+      if (event.type === 'user_text') {
+           setMessages((prev: {role: string, text: string}[]) => [...prev, { role: 'user', text: event.data }]);
+      } else if (event.type === 'text') {
+           setMessages((prev: {role: string, text: string}[]) => {
+               const last = prev[prev.length - 1];
+               if (last && last.role === 'assistant') {
+                   return [...prev.slice(0, -1), { ...last, text: last.text + event.data }];
+               } else {
+                   return [...prev, { role: 'assistant', text: event.data }];
+               }
+           });
+      } else if (event.type === 'audio') {
+           audioQueueRef.current.push(event.data);
+           if (!isPlayingRef.current) {
+               playNextAudioChunk();
+           }
+      } else if (event.type === 'done') {
+           isStreamDoneRef.current = true;
+           if (!isPlayingRef.current) {
+               // If nothing is playing, we are truly done
+               isProcessingRef.current = false;
+               if (isHandsFreeRef.current && !isManualStop.current) {
+                   setTimeout(() => startListening(), 200);
+               }
+           }
+      } else if (event.type === 'error') {
+           console.error("Stream error:", event.data);
+           isProcessingRef.current = false;
+      }
+  };
+
   const handleAudioUpload = async (audioBlob: Blob) => {
     if (isProcessingRef.current) return;
     isProcessingRef.current = true;
+    isStreamDoneRef.current = false;
+    audioQueueRef.current = [];
 
     if (!consultationIdRef.current) {
         isProcessingRef.current = false;
         return;
     }
-
-    // Optimistic UI update (optional, maybe show "Processing...")
     
     const formData = new FormData();
     formData.append('audio', audioBlob);
     formData.append('consultation_id', consultationIdRef.current);
 
     try {
-        const res = await fetch('/api/consultation/audio', {
+        const response = await fetch('/api/consultation/audio/stream', {
             method: 'POST',
             body: formData,
         });
 
-        const data = await res.json();
-        
-        if (data.text) {
-             setMessages((prev: {role: string, text: string}[]) => [...prev, { role: 'user', text: data.text }]);
+        const reader = response.body?.getReader();
+        if (!reader) {
+             throw new Error("No reader");
         }
         
-        if (data.response) {
-            const aiResponse = data.response;
-            setMessages((prev: {role: string, text: string}[]) => [...prev, { role: 'assistant', text: aiResponse }]);
+        const decoder = new TextDecoder();
+        let buffer = '';
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
             
-            const onPlaybackEnd = () => {
-                isProcessingRef.current = false;
-                // Only restart if Hands-Free is ON AND user hasn't manually stopped it
-                if (isHandsFree && !isManualStop.current) {
-                    setTimeout(() => startListening(), 200);
+            const chunk = decoder.decode(value, { stream: true });
+            buffer += chunk;
+            
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop() || ''; 
+            
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const dataStr = line.slice(6);
+                    try {
+                        const event = JSON.parse(dataStr);
+                        handleStreamEvent(event);
+                    } catch (e) {
+                        console.error("Error parsing SSE event", e);
+                    }
                 }
-            };
-
-            if (data.audio_base64) {
-                playBase64Audio(data.audio_base64, onPlaybackEnd);
-            } else {
-                speakResponse(aiResponse, onPlaybackEnd);
             }
-        } else {
-             isProcessingRef.current = false;
-             if (isHandsFree && !isManualStop.current) {
-                 startListening();
-             }
         }
-
     } catch (error) {
         console.error("Error uploading audio", error);
         isProcessingRef.current = false;
-        // Restart loop if hands-free
-        if (isHandsFree && !isManualStop.current) {
+        if (isHandsFreeRef.current && !isManualStop.current) {
              setTimeout(() => startListening(), 1000);
         }
     }

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -16,6 +17,7 @@ const deepSeekAPIURL = "https://api.deepseek.com/chat/completions"
 
 type DeepSeekClient interface {
 	RunCommunicator(ctx context.Context, history []consultation.Message, mood consultation.EmotionalState) (string, consultation.EmotionalState, error)
+	RunCommunicatorStream(ctx context.Context, history []consultation.Message, mood consultation.EmotionalState) (<-chan string, <-chan error)
 	RunAnalyst(ctx context.Context, history []consultation.Message) ([]consultation.MedicalFact, error)
 	RunSupervisor(ctx context.Context, history []consultation.Message, facts []consultation.MedicalFact) (bool, error)
 	GenerateRecommendations(ctx context.Context, facts []consultation.MedicalFact) (string, error)
@@ -42,6 +44,7 @@ type chatRequest struct {
 	Messages    []chatMessage `json:"messages"`
 	Temperature float64       `json:"temperature"`
 	Format      *jsonFormat   `json:"response_format,omitempty"`
+	Stream      bool          `json:"stream,omitempty"`
 }
 
 type jsonFormat struct {
@@ -56,10 +59,113 @@ type chatMessage struct {
 type chatResponse struct {
 	Choices []struct {
 		Message chatMessage `json:"message"`
+		Delta   chatMessage `json:"delta"`
 	} `json:"choices"`
 }
 
 // --- Implementations ---
+
+func (c *client) RunCommunicatorStream(ctx context.Context, history []consultation.Message, mood consultation.EmotionalState) (<-chan string, <-chan error) {
+	systemPrompt := fmt.Sprintf(`Ты — эмпатичный медицинский ассистент в приемном отделении.
+Твоя задача: вежливо и мягко опросить пациента о его симптомах, пока он ожидает врача.
+Текущее настроение пациента (по твоей оценке): %s.
+
+ИНСТРУКЦИЯ ПО ФОРМАТУ ОТВЕТА:
+1. Сначала оцени настроение пациента, используя ТОЛЬКО эти термины: "Спокойное", "Тревожное", "Критическое".
+2. Напиши ответ пациенту.
+3. Формат вывода: "[MOOD: <настроение>] <Текст ответа>"
+
+Пример: "[MOOD: Тревожное] Не волнуйтесь, врач скоро подойдет. Скажите, боль острая или тупая?"
+
+ВАЖНО:
+- Если пациент напуган, успокой его.
+- Если пациент говорит кратко, задавай уточняющие вопросы.
+- Не ставь диагнозы.
+- Задавай только ОДИН вопрос за раз.
+- Если ты собрал достаточно информации (основные жалобы, длительность, характер боли) или пациент сказал, что больше жалоб нет, ОБЯЗАТЕЛЬНО заверши диалог фразой: "Спасибо, врач скоро подойдет". Это сигнал для системы отправить отчет.`, mood)
+
+	messages := []chatMessage{{Role: "system", Content: systemPrompt}}
+	for _, msg := range history {
+		messages = append(messages, chatMessage{Role: msg.Role, Content: msg.Content})
+	}
+
+	return c.makeStreamRequest(ctx, messages, 0.7)
+}
+
+func (c *client) makeStreamRequest(ctx context.Context, messages []chatMessage, temp float64) (<-chan string, <-chan error) {
+	tokenChan := make(chan string)
+	errChan := make(chan error, 1)
+
+	go func() {
+		defer close(tokenChan)
+		defer close(errChan)
+
+		reqBody := chatRequest{
+			Model:       "deepseek-chat",
+			Messages:    messages,
+			Temperature: temp,
+			Stream:      true,
+		}
+
+		jsonBody, _ := json.Marshal(reqBody)
+		req, err := http.NewRequestWithContext(ctx, "POST", deepSeekAPIURL, bytes.NewBuffer(jsonBody))
+		if err != nil {
+			errChan <- err
+			return
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			errChan <- fmt.Errorf("API error: %s - %s", resp.Status, string(body))
+			return
+		}
+
+		reader := bufio.NewReader(resp.Body)
+		for {
+			line, err := reader.ReadBytes('\n')
+			if err != nil {
+				if err != io.EOF {
+					errChan <- err
+				}
+				return
+			}
+
+			lineStr := strings.TrimSpace(string(line))
+			if !strings.HasPrefix(lineStr, "data: ") {
+				continue
+			}
+
+			data := strings.TrimPrefix(lineStr, "data: ")
+			if data == "[DONE]" {
+				return
+			}
+
+			var chatResp chatResponse
+			if err := json.Unmarshal([]byte(data), &chatResp); err != nil {
+				continue
+			}
+
+			if len(chatResp.Choices) > 0 {
+				content := chatResp.Choices[0].Delta.Content
+				if content != "" {
+					tokenChan <- content
+				}
+			}
+		}
+	}()
+
+	return tokenChan, errChan
+}
 
 func (c *client) RunCommunicator(ctx context.Context, history []consultation.Message, mood consultation.EmotionalState) (string, consultation.EmotionalState, error) {
 	systemPrompt := fmt.Sprintf(`Ты — эмпатичный медицинский ассистент в приемном отделении.
