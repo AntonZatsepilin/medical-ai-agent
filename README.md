@@ -44,6 +44,9 @@
    DEEPSEEK_API_KEY=your_key_here
    TELEGRAM_BOT_TOKEN=your_bot_token
    TELEGRAM_CHAT_ID=your_chat_id
+   POSTGRES_USER=medical_user
+   POSTGRES_PASSWORD=postgres
+   POSTGRES_DB=medical_ai
    ```
 
 3. **Запустите проект через Docker Compose:**
@@ -59,7 +62,7 @@
 1. Нажмите кнопку микрофона или включите режим "Hands-Free".
 2. Представьтесь и опишите свои симптомы.
 3. Отвечайте на вопросы ассистента.
-4. Когда ассистент соберет достаточно информации, он попрощается ("Врач скоро подойдет").
+4. Когда ассистент соберет достаточно информации, он попрощается ("Врач скоро подойдет")./Users/anton/Desktop/GitHub/medical-ai-agent/tts
 5. В этот момент в Telegram придет PDF-отчет.
 
 ## Структура проекта
