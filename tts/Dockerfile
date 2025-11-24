@@ -6,11 +6,12 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     libsndfile1 \
     ffmpeg \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-# torch and torchaudio are large, so we install them first to cache the layer
-RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+# Allow pip to find the best wheels for the architecture (including ARM)
+RUN pip install --no-cache-dir torch torchaudio
 RUN pip install --no-cache-dir fastapi uvicorn omegaconf soundfile numpy scipy faster-whisper python-multipart
 
 COPY server.py .

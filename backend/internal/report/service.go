@@ -113,7 +113,6 @@ func (s *Service) SendDoctorReport(ctx context.Context, c consultation.Consultat
 	// Footer
 	pdf.SetY(270)
 	if err := pdf.SetFont("DejaVu", "", 9); err != nil { return err }
-	pdf.Cell(nil, "Сгенерировано автоматически Medical AI Agent")
 
 	// Write to buffer
 	var buf bytes.Buffer

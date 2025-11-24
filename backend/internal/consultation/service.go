@@ -238,6 +238,13 @@ Done:
 					c.Recommendations = recs
 				}
 				c.IsComplete = true
+				
+				// Delay report sending to allow the voice response to finish playing on the client
+				if forceComplete {
+					fmt.Println("Waiting before sending report to allow voice response to complete...")
+					time.Sleep(10 * time.Second)
+				}
+
 				s.reportSvc.SendDoctorReport(bgCtx, c)
 			}
 		}
@@ -330,6 +337,13 @@ func (s *service) ProcessUserAudio(ctx context.Context, consultationID uuid.UUID
 
 				c.IsComplete = true
 				
+				// Delay report sending to allow the voice response to finish playing on the client
+				// This is a simple heuristic. Ideally, the client should acknowledge playback.
+				if forceComplete {
+					fmt.Println("Waiting before sending report to allow voice response to complete...")
+					time.Sleep(10 * time.Second)
+				}
+
 				// Trigger Report Generation
 				if err := s.reportSvc.SendDoctorReport(bgCtx, c); err != nil {
 					fmt.Printf("Failed to send report: %v\n", err)
