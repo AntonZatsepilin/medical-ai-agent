@@ -11,8 +11,10 @@ RUN apt-get update && apt-get install -y \
 
 # Install Python dependencies
 # Allow pip to find the best wheels for the architecture (including ARM)
-RUN pip install --no-cache-dir torch torchaudio
-RUN pip install --no-cache-dir fastapi uvicorn omegaconf soundfile numpy scipy faster-whisper python-multipart
+# Increase timeout for slow connections and upgrade pip first
+RUN pip install --upgrade pip
+RUN pip install --no-cache-dir --default-timeout=1000 torch torchaudio
+RUN pip install --no-cache-dir --default-timeout=1000 fastapi uvicorn omegaconf soundfile numpy scipy faster-whisper python-multipart
 
 COPY server.py .
 
