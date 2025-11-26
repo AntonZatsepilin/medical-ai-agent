@@ -21,7 +21,8 @@ print("Loading Silero TTS model (V5)...")
 model, _ = torch.hub.load(repo_or_dir='snakers4/silero-models',
                           model='silero_tts',
                           language='ru',
-                          speaker='v5_ru')
+                          speaker='v5_ru',
+                          trust_repo=True)
 model.to(device)
 print("TTS Model loaded.")
 
